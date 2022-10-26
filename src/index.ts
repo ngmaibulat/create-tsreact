@@ -5,7 +5,7 @@ if (process.argv.length < 3) {
     console.log("\n\n");
     console.log("\tUsage: npm create tsreact <appname>");
     console.log("\n\n");
-    process.exit(1);
+    process.exit(0);
 }
 
 const appname = process.argv[2];
