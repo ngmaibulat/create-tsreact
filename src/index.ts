@@ -2,6 +2,7 @@
 
 import chalk from 'chalk';
 import fs from 'fs';
+import genPkgJson from './getPackageJson.js';
 
 if (process.argv.length < 3) {
     console.log("\n");
@@ -30,6 +31,9 @@ else {
     fs.mkdirSync(`${appname}/src`, { recursive: true });
     fs.mkdirSync(`${appname}/public`, { recursive: true });
 }
+
+const pkgjson = genPkgJson(appname);
+fs.writeFileSync(`${appname}/package.json`, pkgjson);
 
 //create appname/package.json
 //create appname/src/app.tsx
