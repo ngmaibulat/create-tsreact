@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 
+import chalk from 'chalk';
 
 if (process.argv.length < 3) {
     console.log("\n");
-    console.log("\tPlease provide appname")
-    console.log("\tUsage:");
-    console.log("\tnpm create tsreact <appname>");
-    console.log("\tnpm init tsreact   <appname>");
-    console.log("\tnpx create-tsreact <appname>");
+    console.log(chalk.redBright("Please provide appname\n"))
+    console.log(chalk.yellowBright("Usage:"));
+    console.log(chalk.yellowBright("\tnpm create tsreact <appname>"));
+    console.log(chalk.yellowBright("\tnpm init tsreact   <appname>"));
+    console.log(chalk.yellowBright("\tnpx create-tsreact <appname>"));
     console.log("\n");
     process.exit(0);
 }
 
 const appname = process.argv[2];
 
-console.log(appname);
+console.log(chalk.blue(appname));
 
 //mkdir appname
 //create package.json
