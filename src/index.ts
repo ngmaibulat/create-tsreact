@@ -2,7 +2,9 @@
 
 
 if (process.argv.length < 3) {
-    console.log("Usage: npm create tsreact <appname>");
+    console.log("\n\n");
+    console.log("\tUsage: npm create tsreact <appname>");
+    console.log("\n\n");
     process.exit(1);
 }
 
