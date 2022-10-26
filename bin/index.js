@@ -490,6 +490,7 @@ var chalkStderr = createChalk({ level: stderrColor ? stderrColor.level : 0 });
 var source_default = chalk;
 
 // src/index.ts
+import fs from "fs";
 if (process.argv.length < 3) {
   console.log("\n");
   console.log(source_default.redBright("Please provide appname\n"));
@@ -501,4 +502,12 @@ if (process.argv.length < 3) {
   process.exit(0);
 }
 var appname = process.argv[2];
-console.log(source_default.blue(appname));
+if (fs.existsSync(appname)) {
+  const msg = source_default.red(`Directory exists: ${appname}`);
+  console.log(msg);
+  process.exit(0);
+} else {
+  fs.mkdirSync(appname, { recursive: true });
+  fs.mkdirSync(`${appname}/src`, { recursive: true });
+  fs.mkdirSync(`${appname}/public`, { recursive: true });
+}

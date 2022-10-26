@@ -6,7 +6,7 @@ TS/React Scaffolder using esbuild compiler/bundler
 ### Use
 
 ```sh
-npm create tsreact <appname>
+npm create tsreact@latest <appname>
 cd <appname>
 npm install
 npm run dev
