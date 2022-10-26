@@ -10,3 +10,19 @@ export function usage()
     console.log(chalk.yellowBright("\tnpx create-tsreact <appname>"));
     console.log("\n");
 }
+
+
+export function steps(name: string)
+{
+    const msg =
+    
+    chalk.yellowBright(`\nFurther steps:`) +
+    
+    chalk.greenBright(`
+    cd ${name}
+    npm install
+    npm run dev
+    `);
+
+    console.log(msg);
+}

@@ -574,6 +574,15 @@ function usage() {
   console.log(source_default.yellowBright("	npx create-tsreact <appname>"));
   console.log("\n");
 }
+function steps(name) {
+  const msg = source_default.yellowBright(`
+Further steps:`) + source_default.greenBright(`
+    cd ${name}
+    npm install
+    npm run dev
+    `);
+  console.log(msg);
+}
 
 // src/index.ts
 if (process.argv.length < 3) {
@@ -597,3 +606,4 @@ content = genIndexHtml(appname);
 fs.writeFileSync(`${appname}/public/index.html`, content);
 content = genAppTsx(appname);
 fs.writeFileSync(`${appname}/src/app.tsx`, content);
+steps(appname);

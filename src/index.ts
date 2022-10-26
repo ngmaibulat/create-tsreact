@@ -7,7 +7,7 @@ import genPkgJson from './getPackageJson.js';
 import genIndexHtml from './genIndexHtml.js';
 import genAppTsx from './genAppTsx.js';
 
-import {usage} from './help.js';
+import {usage, steps} from './help.js';
 
 if (process.argv.length < 3) {
     usage();
@@ -46,7 +46,4 @@ content = genAppTsx(appname);
 fs.writeFileSync(`${appname}/src/app.tsx`, content);
 
 //provide instructions:
-//cd appname
-//npm install
-//npm run dev
-
+steps(appname);
