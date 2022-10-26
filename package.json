@@ -11,7 +11,7 @@
     "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017"
   },
   "bin": {
-    "create-tsreact": "node ./bin/index.js"
+    "create-tsreact": "bin/index.js"
   },
   "repository": {
     "type": "git",
