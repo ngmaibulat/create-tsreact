@@ -1,0 +1,40 @@
+{
+  "name": "@aibulat/create-tsreact",
+  "version": "0.0.1",
+  "description": "TS/React Scaffolder using esbuild compiler/bundler",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "esbuild-help": "esbuild -h",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --watch",
+    "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017"
+  },
+  "bin": {
+    "create-tsreact": "node ./bin/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ngmaibulat/create-tsreact.git"
+  },
+  "keywords": [
+    "Scaffolder",
+    "Typescript",
+    "React",
+    "Create Application",
+    "ESBuild",
+    "Generator"
+  ],
+  "author": "Aibulat",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ngmaibulat/create-tsreact/issues"
+  },
+  "homepage": "https://github.com/ngmaibulat/create-tsreact#readme",
+  "dependencies": {
+    "esbuild": "^0.15.12"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.5"
+  }
+}
