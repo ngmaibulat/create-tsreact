@@ -1,15 +1,14 @@
 {
   "name": "create-tsreact",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "TS/React Scaffolder using esbuild compiler/bundler",
   "main": "index.js",
   "type": "module",
-
   "scripts": {
     "esbuild-help": "esbuild -h",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node --watch",
-    "build":       "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node",
+    "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node",
     "commit": "git add . ; git commit -a -m 'minor fix'; git push"
   },
   "bin": {
