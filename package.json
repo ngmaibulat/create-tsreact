@@ -1,6 +1,6 @@
 {
-  "name": "@aibulat/create-tsreact",
-  "version": "0.0.2",
+  "name": "create-tsreact",
+  "version": "0.0.1",
   "description": "TS/React Scaffolder using esbuild compiler/bundler",
   "main": "index.js",
   "type": "module",
@@ -33,9 +33,9 @@
   },
   "homepage": "https://github.com/ngmaibulat/create-tsreact#readme",
   "dependencies": {
-    "esbuild": "^0.15.12"
   },
   "devDependencies": {
-    "@types/node": "^18.11.5"
+    "@types/node": "^18.11.5",
+    "esbuild": "^0.15.12"
   }
 }
