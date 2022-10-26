@@ -526,8 +526,46 @@ function genPkgJson(name) {
   return tpl;
 }
 
-// src/index.ts
-if (process.argv.length < 3) {
+// src/genIndexHtml.ts
+function genIndexHtml(name) {
+  const tpl = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${name}</title>
+</head>
+<body>
+    <div id="app"></div>
+    <script type="module" src="./app.js"><\/script>
+</body>
+</html>
+`;
+  return tpl;
+}
+
+// src/genAppTsx.ts
+function genAppTsx(name) {
+  const tpl = `
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+
+function App()
+{
+    return <h1>Hello World from ${name} app!</h1>
+}
+
+const container = document.getElementById('app')!;
+const root = createRoot(container);
+root.render(<App />);
+`;
+  return tpl;
+}
+
+// src/help.ts
+function usage() {
   console.log("\n");
   console.log(source_default.redBright("Please provide appname\n"));
   console.log(source_default.yellowBright("Usage:"));
@@ -535,6 +573,11 @@ if (process.argv.length < 3) {
   console.log(source_default.yellowBright("	npm init tsreact   <appname>"));
   console.log(source_default.yellowBright("	npx create-tsreact <appname>"));
   console.log("\n");
+}
+
+// src/index.ts
+if (process.argv.length < 3) {
+  usage();
   process.exit(0);
 }
 var appname = process.argv[2];
@@ -547,5 +590,10 @@ if (fs.existsSync(appname)) {
   fs.mkdirSync(`${appname}/src`, { recursive: true });
   fs.mkdirSync(`${appname}/public`, { recursive: true });
 }
-var pkgjson = genPkgJson(appname);
-fs.writeFileSync(`${appname}/package.json`, pkgjson);
+var content = "";
+content = genPkgJson(appname);
+fs.writeFileSync(`${appname}/package.json`, content);
+content = genIndexHtml(appname);
+fs.writeFileSync(`${appname}/public/index.html`, content);
+content = genAppTsx(appname);
+fs.writeFileSync(`${appname}/src/app.tsx`, content);
