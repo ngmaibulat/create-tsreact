@@ -3,9 +3,12 @@
 import chalk from 'chalk';
 import fs from 'fs';
 
-import genPkgJson from './getPackageJson.js';
+import genPkgJson from './genPackageJson.js';
 import genIndexHtml from './genIndexHtml.js';
 import genAppTsx from './genAppTsx.js';
+import genTsConfig from './genTsConfig.js';
+import genGitIgnore from './genGitIgnore.js'
+import genAppCss from './genAppCss.js';
 
 import {usage, steps} from './help.js';
 
@@ -44,6 +47,16 @@ fs.writeFileSync(`${appname}/public/index.html`, content);
 
 content = genAppTsx(appname);
 fs.writeFileSync(`${appname}/src/app.tsx`, content);
+
+content = genTsConfig();
+fs.writeFileSync(`${appname}/tsconfig.json`, content);
+
+content = genGitIgnore();
+fs.writeFileSync(`${appname}/.gitignore`, content);
+
+content = genAppCss();
+fs.writeFileSync(`${appname}/public/app.css`, content);
+
 
 //provide instructions:
 steps(appname);
