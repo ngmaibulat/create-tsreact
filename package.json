@@ -1,6 +1,6 @@
 {
   "name": "@aibulat/create-tsreact",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "TS/React Scaffolder using esbuild compiler/bundler",
   "main": "index.js",
   "type": "module",
@@ -9,7 +9,6 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --watch",
     "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017",
-
     "update-pkg-json": "git add . ; git commit -a -m 'package.json update'; git push"
   },
   "bin": {
