@@ -1,8 +1,5 @@
-
-export default function genAppTsx(name: string)
-{
-    const tpl = 
-`
+export default function genAppTsx(name: string) {
+    const tpl = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -15,6 +12,6 @@ const container = document.getElementById('app')!;
 const root = createRoot(container);
 root.render(<App />);
 `;
-    
+
     return tpl;
 }

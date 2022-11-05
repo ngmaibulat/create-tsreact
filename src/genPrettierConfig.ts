@@ -1,9 +1,4 @@
 export default function genPrettierConfig() {
-    const tpl = `
-{
-  "editorconfig": true
-}
-`;
-
+    const tpl = `{}`;
     return tpl;
 }

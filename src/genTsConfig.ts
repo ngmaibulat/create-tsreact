@@ -1,8 +1,5 @@
-
-export default function genTsConfig()
-{
-    const tpl =
-`
+export default function genTsConfig() {
+    const tpl = `
 {
     "compilerOptions": {
       "target": "ESNext",
@@ -23,6 +20,6 @@ export default function genTsConfig()
     },
     "include": ["src"]
 }
-`
+`;
     return tpl;
 }

@@ -1,8 +1,5 @@
-
-export default function genGitIgnore()
-{
-    const tpl = 
-`
+export default function genGitIgnore() {
+    const tpl = `
 # Logs
 logs
 *.log

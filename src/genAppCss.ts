@@ -1,8 +1,5 @@
-
-export default function genAppCss()
-{
-    const tpl = 
-`
+export default function genAppCss() {
+    const tpl = `
 #app {
     padding: 15px;
     margin-right: auto;
@@ -11,6 +8,6 @@ export default function genAppCss()
     max-width: 50%;
 }
 `;
-    
+
     return tpl;
 }

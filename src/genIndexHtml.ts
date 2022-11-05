@@ -1,8 +1,5 @@
-
-export default function genIndexHtml(name: string)
-{
-    const tpl = 
-`
+export default function genIndexHtml(name: string) {
+    const tpl = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -18,6 +15,6 @@ export default function genIndexHtml(name: string)
 </body>
 </html>
 `;
-    
+
     return tpl;
 }

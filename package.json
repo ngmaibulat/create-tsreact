@@ -5,6 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "format:check": "npx prettier src --check",
+    "format:fix": "npx prettier src --write",
     "esbuild-help": "esbuild -h",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node --watch",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.11.5",
-    "esbuild": "^0.15.12"
+    "esbuild": "^0.15.12",
+    "prettier": "^2.7.1"
   }
 }

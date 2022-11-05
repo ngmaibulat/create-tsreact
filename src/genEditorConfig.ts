@@ -1,8 +1,5 @@
-
-export default function genEditorConfig()
-{
-    const tpl =
-`
+export default function genEditorConfig() {
+    const tpl = `
 root=true
 
 [*]
