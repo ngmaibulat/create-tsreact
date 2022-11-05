@@ -14,9 +14,6 @@
     "commit": "git add . ; git commit -a -m 'minor fix'; git push",
     "prepare": "husky install"
   },
-  "lint-staged": {
-    "**/*": "prettier --write --ignore-unknown"
-  },
   "bin": {
     "create-tsreact": "bin/index.js"
   },
