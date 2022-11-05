@@ -11,7 +11,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node --watch",
     "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node",
-    "commit": "git add . ; git commit -a -m 'minor fix'; git push"
+    "commit": "git add . ; git commit -a -m 'minor fix'; git push",
+    "prepare": "husky install"
+  },
+  "lint-staged": {
+    "**/*": "prettier --write --ignore-unknown"
   },
   "bin": {
     "create-tsreact": "bin/index.js"
@@ -40,6 +44,8 @@
   "devDependencies": {
     "@types/node": "^18.11.5",
     "esbuild": "^0.15.12",
+    "husky": "^8.0.1",
+    "lint-staged": "^13.0.3",
     "prettier": "^2.7.1"
   }
 }
