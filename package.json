@@ -7,6 +7,7 @@
   "scripts": {
     "format:check": "npx prettier src --check",
     "format:fix": "npx prettier src --write",
+    "lint": "npx eslint src",
     "esbuild-help": "esbuild -h",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node --watch",
