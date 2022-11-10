@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
+npm run build
+
+git add bin/index.js
+
 git status
 
 npx lint-staged

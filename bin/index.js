@@ -501,6 +501,8 @@ function genPkgJson(name) {
     "description": "Typescript/React application",
     "main": "index.js",
     "scripts": {
+        "format:check": "npx prettier src --check",
+        "format:fix": "npx prettier src --write",
         "test": "echo 'Error: no test specified' && exit 1",
         "build-watch": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017 --watch",
         "build": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017",
@@ -519,9 +521,10 @@ function genPkgJson(name) {
     "devDependencies": {
         "esbuild": "^0.15.12",
         "@types/react": "^18.0.22",
-        "@types/react-dom": "^18.0.7"
+        "@types/react-dom": "^18.0.7",
+        "prettier": "^2.7.1"
     }
-}  
+}
 `;
   return tpl;
 }
@@ -570,17 +573,17 @@ function genTsConfig() {
   const tpl = `
 {
     "compilerOptions": {
-      "target": "ESNext",
+      "target": "ES2022",
       "useDefineForClassFields": true,
-      "lib": ["DOM", "DOM.Iterable", "ESNext"],
-      "allowJs": false,
+      "lib": ["DOM", "DOM.Iterable", "ES2022"],
+      "allowJs": true,
       "skipLibCheck": true,
       "esModuleInterop": false,
       "allowSyntheticDefaultImports": true,
       "strict": true,
       "forceConsistentCasingInFileNames": true,
-      "module": "ESNext",
-      "moduleResolution": "Node",
+      "module": "ES2022",
+      "moduleResolution": "NodeNext",
       "resolveJsonModule": true,
       "isolatedModules": true,
       "noEmit": true,
@@ -730,10 +733,10 @@ trim_trailing_whitespace = true
 insert_final_newline = true
 charset = utf-8
 
-[*.{json, md}]
+[*.{json,md}]
 indent_size = 2
 
-[*.{js, ts}]
+[*.{js,ts}]
 indent_size = 4
 
 [Makefile]
@@ -746,11 +749,7 @@ indent_size = 4
 
 // src/genPrettierConfig.ts
 function genPrettierConfig() {
-  const tpl = `
-{
-  "editorconfig": true
-}
-`;
+  const tpl = `{}`;
   return tpl;
 }
 
