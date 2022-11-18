@@ -10,8 +10,8 @@
     "lint": "npx eslint src",
     "esbuild-help": "esbuild -h",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node --watch",
-    "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2017 --platform=node",
+    "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2022 --platform=node --watch",
+    "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2022 --platform=node",
     "commit": "git add . ; git commit -a -m 'minor fix'; git push",
     "prepare": "husky install"
   },

@@ -9,18 +9,18 @@ So, I wanted to create a scaffolder for React/Typescript projects with absolute 
 
 This scaffolder should be:
 
--   fast to run itself
--   fast for `npm install`
--   easy to review/understand created files
--   using esbuild makes it fast to compile/bundle
+- fast to run itself
+- fast for `npm install`
+- easy to review/understand created files
+- using esbuild makes it fast to compile/bundle
 
 It also would add `prettier` as dev dependency. For Visual Studio Code, it is recommended to use
 extension: https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode
 
 You can also use prettier from CLI:
 
--   `npm run format:check`
--   `npm run format:fix`
+- `npm run format:check`
+- `npm run format:fix`
 
 While being light-weight, it still gives you a working environment for React/Typescript!
 
@@ -34,4 +34,14 @@ npm create tsreact@latest <appname>
 cd <appname>
 npm install
 npm run dev
+```
+
+### Building
+
+Building is done via `eslint`. Here is the command for `npm run build`. As you see, it targets `es2022`.
+So, you can use all modern stuff like top-level await. If required, please adjust options in scripts section
+of package.json.
+
+```sh
+npx esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2022
 ```

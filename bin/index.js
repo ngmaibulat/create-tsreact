@@ -1,23 +1,4 @@
 #!/usr/bin/env node
-var __defProp = Object.defineProperty;
-var __defProps = Object.defineProperties;
-var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __spreadValues = (a, b) => {
-  for (var prop in b || (b = {}))
-    if (__hasOwnProp.call(b, prop))
-      __defNormalProp(a, prop, b[prop]);
-  if (__getOwnPropSymbols)
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    }
-  return a;
-};
-var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
 // node_modules/chalk/source/vendor/ansi-styles/index.js
 var ANSI_BACKGROUND_OFFSET = 10;
@@ -302,9 +283,10 @@ function _supportsColor(haveStream, { streamIsTTY, sniffFlags = true } = {}) {
   return min;
 }
 function createSupportsColor(stream, options = {}) {
-  const level = _supportsColor(stream, __spreadValues({
-    streamIsTTY: stream && stream.isTTY
-  }, options));
+  const level = _supportsColor(stream, {
+    streamIsTTY: stream && stream.isTTY,
+    ...options
+  });
   return translateLevel(level);
 }
 var supportsColor = {
@@ -426,7 +408,8 @@ for (const model of usedModels) {
   };
 }
 var proto = Object.defineProperties(() => {
-}, __spreadProps(__spreadValues({}, styles2), {
+}, {
+  ...styles2,
   level: {
     enumerable: true,
     get() {
@@ -436,7 +419,7 @@ var proto = Object.defineProperties(() => {
       this[GENERATOR].level = level;
     }
   }
-}));
+});
 var createStyler = (open, close, parent) => {
   let openAll;
   let closeAll;
@@ -504,10 +487,10 @@ function genPkgJson(name) {
         "format:check": "npx prettier src --check",
         "format:fix": "npx prettier src --write",
         "test": "echo 'Error: no test specified' && exit 1",
-        "build-watch": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017 --watch",
-        "build": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017",
-        "dev": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017  --serve=localhost:3000 --servedir=public",
-        "serve": "esbuild --serve=localhost:3000 --servedir=public"
+        "build-watch": "npx esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2022 --watch",
+        "build": "npx esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2022",
+        "dev": "npx esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2022  --serve=localhost:3000 --servedir=public",
+        "serve": "npx esbuild --serve=localhost:3000 --servedir=public"
     },
     "keywords": [
         "created by tsreact"

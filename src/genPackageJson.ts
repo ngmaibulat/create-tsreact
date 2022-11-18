@@ -9,10 +9,10 @@ export default function genPkgJson(name: string) {
         "format:check": "npx prettier src --check",
         "format:fix": "npx prettier src --write",
         "test": "echo 'Error: no test specified' && exit 1",
-        "build-watch": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017 --watch",
-        "build": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017",
-        "dev": "esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2017  --serve=localhost:3000 --servedir=public",
-        "serve": "esbuild --serve=localhost:3000 --servedir=public"
+        "build-watch": "npx esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2022 --watch",
+        "build": "npx esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2022",
+        "dev": "npx esbuild src/app.tsx --bundle --outdir=public --format=esm --platform=browser --target=es2022  --serve=localhost:3000 --servedir=public",
+        "serve": "npx esbuild --serve=localhost:3000 --servedir=public"
     },
     "keywords": [
         "created by tsreact"
