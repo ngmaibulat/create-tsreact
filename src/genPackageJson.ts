@@ -20,14 +20,14 @@ export default function genPkgJson(name: string) {
     "author": "",
     "license": "MIT",
     "dependencies": {
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0"
+        "react": "^19.2.8",
+        "react-dom": "^19.2.8"
     },
     "devDependencies": {
-        "esbuild": "^0.15.12",
-        "@types/react": "^18.0.22",
-        "@types/react-dom": "^18.0.7",
-        "prettier": "^2.7.1"
+        "esbuild": "^0.28.2",
+        "@types/react": "^19.2.18",
+        "@types/react-dom": "^19.2.4",
+        "prettier": "^3.9.6"
     }
 }
 `;

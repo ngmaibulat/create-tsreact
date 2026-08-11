@@ -498,14 +498,14 @@ function genPkgJson(name) {
     "author": "",
     "license": "MIT",
     "dependencies": {
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0"
+        "react": "^19.2.8",
+        "react-dom": "^19.2.8"
     },
     "devDependencies": {
-        "esbuild": "^0.15.12",
-        "@types/react": "^18.0.22",
-        "@types/react-dom": "^18.0.7",
-        "prettier": "^2.7.1"
+        "esbuild": "^0.28.2",
+        "@types/react": "^19.2.18",
+        "@types/react-dom": "^19.2.4",
+        "prettier": "^3.9.6"
     }
 }
 `;
@@ -536,7 +536,6 @@ function genIndexHtml(name) {
 // src/genAppTsx.ts
 function genAppTsx(name) {
   const tpl = `
-import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 function App()
@@ -561,12 +560,12 @@ function genTsConfig() {
       "lib": ["DOM", "DOM.Iterable", "ES2022"],
       "allowJs": true,
       "skipLibCheck": true,
-      "esModuleInterop": false,
+      "esModuleInterop": true,
       "allowSyntheticDefaultImports": true,
       "strict": true,
       "forceConsistentCasingInFileNames": true,
-      "module": "ES2022",
-      "moduleResolution": "NodeNext",
+      "module": "ESNext",
+      "moduleResolution": "bundler",
       "resolveJsonModule": true,
       "isolatedModules": true,
       "noEmit": true,

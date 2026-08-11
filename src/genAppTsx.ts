@@ -1,6 +1,5 @@
 export default function genAppTsx(name: string) {
     const tpl = `
-import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 function App()
