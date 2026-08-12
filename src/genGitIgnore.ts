@@ -1,4 +1,41 @@
-export default function genGitIgnore() {
+import type { BrowserTemplate, Opts } from "./cli.js";
+
+//esbuild writes its output into public/ alongside the handwritten
+//index.html / manifest.json, so the generated files have to be listed
+//one by one - the folder itself must stay tracked.
+//
+//expo is absent on purpose: it bundles with metro and has its own ignore
+//file, see genExpoGitIgnore.ts
+const OUTPUT: Record<BrowserTemplate, string[]> = {
+    react: ["public/app.js", "public/app.css"],
+    pwa: ["public/app.js", "public/app.css", "public/sw.js"],
+    extension: [
+        "public/popup.js",
+        "public/popup.css",
+        "public/content.js",
+        "public/background.js",
+    ],
+};
+
+//with --tailwind the stylesheet imported by the app is compiled from
+//src/styles.css, so it stops being a source file and must not be committed
+const TAILWIND_OUTPUT: Record<BrowserTemplate, string> = {
+    react: "src/app.css",
+    pwa: "src/app.css",
+    extension: "src/popup.css",
+};
+
+export default function genGitIgnore(o: Opts) {
+    const template = o.template as BrowserTemplate;
+
+    const generated = [...OUTPUT[template], "public/*.map"];
+
+    if (o.tailwind) {
+        generated.push(TAILWIND_OUTPUT[template]);
+    }
+
+    const output = generated.join("\n");
+
     const tpl = `
 # Logs
 logs
@@ -104,6 +141,9 @@ dist
 
 # TernJS port file
 .tern-port
+
+# esbuild output
+${output}
 `;
 
     return tpl;
