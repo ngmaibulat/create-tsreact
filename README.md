@@ -59,6 +59,10 @@ tells you to run `npm install` and `npm run dev` instead.
 | `next-drizzle`    | Next 16 on Turbopack + Drizzle ORM on SQLite/libsql             |
 | `fastify-react`   | Workspaces monorepo: Fastify API (rolldown) + React on Vite     |
 
+[`supported-stacks.md`](./supported-stacks.md) has the per-template detail —
+which bundler runs, what the dev and build commands are, where the output lands,
+and how Tailwind is compiled in each lane.
+
 Two flags add styling to any of the browser templates:
 
 | Flag         | What it does                                             |
