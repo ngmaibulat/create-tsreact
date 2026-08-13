@@ -231,6 +231,7 @@ The expo template is the only one that shares nothing with the rest: no esbuild,
 - **The generated `.npmrc` is only for pnpm 10.** It enables `pre<name>` hooks so the tailwind templates' `predev` runs. pnpm 11 runs them by default, so its absence is invisible on a current pnpm and breaks the first `dev` on an older one.
 - **`pnpm -r --parallel run dev` replaced `concurrently`.** npm ran workspace scripts serially, which is why that dependency existed. Reintroducing a serial fan-out for `dev` would start the API and never reach the web app.
 - **Workspace children are scoped, and npm names must be lowercase.** `scope()` in `cli.ts` lowercases the app name; without it `create-tsreact MyApp` emits an invalid `@MyApp/web` manifest.
+- **`npm version` must not be run from `packages/cli`.** npm decides whether it is in a git repo with `stat(cwd + "/.git")` (`@npmcli/git`'s `is()`), and `libnpmversion` gates _all_ git behaviour on that one check. A workspace child has no `.git`, so the clean-tree check, the commit and the tag are all skipped and the command degrades to rewriting `version` — which then leaves the tree dirty and `pnpm publish` fails with `ERR_PNPM_GIT_UNCLEAN`. Nothing warns; the bump prints `v0.0.25` and looks like it worked. That is why the release is `scripts/release.mjs` at the root, and why no `release` script lives in `packages/cli` any more.
 
 ## `bin/index.js` is committed and auto-generated
 
@@ -246,7 +247,9 @@ Consequences: never hand-edit `bin/index.js` — the hook overwrites it. `bin/**
 
 ## Publishing
 
-`pnpm run release` from the root, on a clean `main`. That is `pnpm --filter create-tsreact run release`, which is `npm version patch && pnpm publish` inside `packages/cli` — so the patch bump, the version commit and the `v<x.y.z>` tag all happen as part of publishing, and the version in git always matches what is on npm. Nothing bumps the version by hand.
+`pnpm run release` from the root, on a clean `main`. That is `node scripts/release.mjs [patch|minor|major]` (default `patch`), which in order: refuses to start unless the branch is `main` (`--any-branch` overrides) and `git status --porcelain` is empty, runs `npm version <bump> --no-git-tag-version` in `packages/cli`, rebuilds the bundle, commits `packages/cli/package.json` + `bin/index.js` as `v<x.y.z>`, tags `v<x.y.z>`, and only then runs `pnpm --filter create-tsreact publish`. So the version in git always matches what is on npm, and nothing bumps the version by hand.
+
+It does **not** push — `git push --follow-tags` is a deliberate manual step. And if the publish fails, the commit and tag already exist: retry with `pnpm --filter create-tsreact publish`, never by re-running `release`, which would bump a second time.
 
 Never `pnpm publish` from the root: the root is `create-tsreact-workspace`, `private: true`, and exists only to hold the workspace, so it fails with `EPRIVATE`. Publishing is always `packages/cli`.
 

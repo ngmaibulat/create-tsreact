@@ -1,6 +1,6 @@
 {
   "name": "create-tsreact",
-  "version": "0.0.24",
+  "version": "0.0.25",
   "description": "TS/React Scaffolder using esbuild compiler/bundler",
   "type": "module",
   "scripts": {
@@ -8,8 +8,7 @@
     "test": "pnpm run build && node smoke.mjs",
     "build-watch": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2022 --platform=node --watch",
     "build": "esbuild src/index.ts --bundle --outdir=bin --format=esm --target=es2022 --platform=node",
-    "prepublishOnly": "pnpm run build",
-    "release": "npm version patch && pnpm publish"
+    "prepublishOnly": "pnpm run build"
   },
   "bin": {
     "create-tsreact": "bin/index.js"
