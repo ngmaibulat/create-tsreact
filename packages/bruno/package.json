@@ -1,0 +1,17 @@
+{
+  "name": "@tsreact/bruno",
+  "version": "0.0.0",
+  "description": "Bruno collection parser, sampler and type inferrer",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./collection": "./src/collection.ts",
+    "./emit": "./src/emit.ts",
+    "./error": "./src/error.ts",
+    "./infer": "./src/infer.ts",
+    "./parse": "./src/parse.ts",
+    "./sample": "./src/sample.ts",
+    "./spec": "./src/spec.ts"
+  },
+  "license": "MIT"
+}

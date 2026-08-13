@@ -1,0 +1,12 @@
+packages:
+    - packages/*
+
+# esbuild is the only dependency in this repo with a postinstall script, and
+# pnpm 10+ refuses to run build scripts that are not listed here. Without it
+# the platform binary is never unpacked and "pnpm build" fails.
+#
+# NOTE: the key is "allowBuilds" on pnpm 11. "onlyBuiltDependencies" is the
+# pnpm 10 spelling and is silently ignored here - pnpm rewrites this file with
+# an allowBuilds stub rather than erroring, which is easy to miss.
+allowBuilds:
+    esbuild: true

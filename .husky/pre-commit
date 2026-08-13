@@ -1,12 +1,12 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-npm run build
+pnpm run build
 
-git add bin/index.js
+git add packages/cli/bin/index.js
 
 git status
 
-npx lint-staged
+pnpm exec lint-staged
 
-npx eslint src
+pnpm run lint
