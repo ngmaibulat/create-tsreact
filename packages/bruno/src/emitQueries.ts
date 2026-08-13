@@ -35,9 +35,9 @@ export default function queriesTs(spec: ApiSpec) {
             request<${name}Response>({
                 method: '${e.method.toUpperCase()}',
                 path: ${path},${queryObject(
-            e,
-            "                "
-        )}${headersObject(e, spec.vars, "                ")}
+                    e,
+                    "                ",
+                )}${headersObject(e, spec.vars, "                ")}
                 signal,
             }),
     });

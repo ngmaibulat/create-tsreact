@@ -18,13 +18,9 @@ export default function genPnpmWorkspaceYaml(o: Opts) {
     //@parcel/watcher comes in with @tailwindcss/cli, so it appears only where
     //the standalone tailwind toolchain does. It is a native module, and its
     //postinstall is what produces the binding "tailwindcss --watch" uses.
-    const standalone =
-        o.template === "react" ||
-        o.template === "pwa" ||
-        o.template === "extension";
+    const standalone = o.template === "react" || o.template === "pwa" || o.template === "extension";
 
-    const watcher =
-        standalone && o.tailwind ? `\n    "@parcel/watcher": true` : "";
+    const watcher = standalone && o.tailwind ? `\n    "@parcel/watcher": true` : "";
 
     //Metro resolves modules by walking node_modules upward and cannot follow
     //pnpm's default symlinked layout, so React Native needs the flat one.

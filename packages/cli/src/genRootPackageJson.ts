@@ -1,6 +1,7 @@
-import { APPS, scope } from "./cli.js";
-import type { Opts } from "./cli.js";
 import { detectPm } from "@tsreact/pm";
+
+import { APPS, scope, standaloneTailwind } from "./cli.js";
+import type { Opts } from "./cli.js";
 
 //The workspace root. It ships no source of its own - it holds the lockfile,
 //the "tsreact" marker, and the scripts that fan out to apps/*.
@@ -26,10 +27,6 @@ import { detectPm } from "@tsreact/pm";
 export default function genRootPackageJson(o: Opts) {
     const pm = detectPm();
     const apps = APPS[o.template];
-    const oxc =
-        o.template === "vite-spa" ||
-        o.template === "next-drizzle" ||
-        o.template === "fastify-react";
 
     //where the Bruno collection lives, and which template this is - the
     //latter is what tells "create-tsreact api" where the client goes. Both
@@ -38,23 +35,34 @@ export default function genRootPackageJson(o: Opts) {
         ? `\n    "tsreact": {\n        "api": "${o.api.dir}",\n        "template": "${o.template}"\n    },`
         : "";
 
-    const api = o.api
-        ? `\n        "api:gen": "${pm.dlx} create-tsreact@latest api",`
-        : "";
+    const api = o.api ? `\n        "api:gen": "${pm.dlx} create-tsreact@latest api",` : "";
 
-    const src = apps.map((a) => `apps/${a}/src`).join(" ");
+    //expo is the one template whose app has no src/ - App.tsx and index.ts sit
+    //at the app root next to app.json - so pointing at "apps/mobile/src" would
+    //hand oxfmt a path that does not exist, and it exits 2 on that rather than
+    //shrugging. Naming the two files is also what keeps the generated 4-space
+    //json out of the formatter's way: "oxfmt apps/mobile" would rewrite
+    //app.json and tsconfig.json to .editorconfig's 2-space setting.
+    //
+    //(With --api the client does land at apps/mobile/src/api, but that path is
+    //in .oxfmtrc.json's ignorePatterns, so there is still nothing to add here.)
+    const src =
+        o.template === "expo"
+            ? apps.map((a) => `apps/${a}/App.tsx apps/${a}/index.ts`).join(" ")
+            : apps.map((a) => `apps/${a}/src`).join(" ");
 
     //oxfmt does not expand globs itself, so every app path is spelled out -
     //"apps/*/src" only works where a shell expands it first, which npm
     //scripts do on posix and cmd.exe does not.
-    const quality = oxc
-        ? `
+    //
+    //Every template gets this pair now. There used to be an "oxc" branch that
+    //handed the esbuild and expo templates prettier instead; the split bought
+    //nothing except two toolchains to keep in step, and oxlint needs no plugin,
+    //parser or resolver package to install.
+    const quality = `
         "lint": "oxlint",
         "format:check": "oxfmt --check ${src}",
-        "format:fix": "oxfmt ${src}",`
-        : `
-        "format:check": "prettier ${src} --check",
-        "format:fix": "prettier ${src} --write",`;
+        "format:fix": "oxfmt ${src}",`;
 
     const dev =
         o.template === "expo"
@@ -88,16 +96,30 @@ export default function genRootPackageJson(o: Opts) {
             : "";
 
     //the tailwind watcher is still a second process the user starts by hand;
-    //the root just forwards to whichever app owns it
-    const tw =
-        o.tailwind && !oxc
-            ? `
+    //the root just forwards to whichever app owns it. Only the templates whose
+    //apps actually have a "tw" script - see standaloneTailwind in cli.ts, which
+    //is also what help.ts checks before advertising this command.
+    const tw = standaloneTailwind(o)
+        ? `
         "tw": "pnpm -r run tw",`
-            : "";
+        : "";
 
-    const deps = oxc
-        ? [`"oxfmt": "^0.62.0"`, `"oxlint": "^1.70.0"`]
-        : [`"prettier": "^3.9.0"`];
+    //husky writes .husky/_ and points core.hooksPath at it. Outside a git
+    //repository it prints ".git can't be found" and exits 0, so a scaffolded
+    //directory that has not been "git init"-ed yet still installs cleanly and
+    //the hook starts working the moment one exists.
+    const prepare = o.husky
+        ? `
+        "prepare": "husky",`
+        : "";
+
+    const deps = [`"oxfmt": "^0.62.0"`, `"oxlint": "^1.70.0"`];
+
+    if (o.husky) {
+        deps.push(`"husky": "^9.1.0"`, `"lint-staged": "^17.0.0"`);
+    }
+
+    deps.sort();
 
     const tpl = `
 {
@@ -109,7 +131,7 @@ export default function genRootPackageJson(o: Opts) {
     "engines": {
         "node": "^20.19.0 || >=22.12.0"
     },
-    "scripts": {${dev}${halves}${db}${tw}
+    "scripts": {${dev}${halves}${db}${tw}${prepare}
         "typecheck": "pnpm -r run typecheck",${quality}${api}
         "test": "echo 'Error: no test specified' && exit 1"
     },

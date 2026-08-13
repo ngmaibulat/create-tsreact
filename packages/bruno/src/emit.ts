@@ -66,9 +66,7 @@ export function resolvedUrls(spec: ApiSpec) {
 }
 
 export function baseUrl(spec: ApiSpec) {
-    const urls = [...resolvedUrls(spec).values()].filter(
-        (u) => !unresolved(u).length
-    );
+    const urls = [...resolvedUrls(spec).values()].filter((u) => !unresolved(u).length);
 
     return commonPrefix(urls);
 }
@@ -132,9 +130,7 @@ export function str(value: string) {
 
 //params.page where the name allows it, params['odd-name'] where it does not
 export function access(key: string) {
-    return /^[A-Za-z_$][\w$]*$/.test(key)
-        ? `params.${key}`
-        : `params[${str(key)}]`;
+    return /^[A-Za-z_$][\w$]*$/.test(key) ? `params.${key}` : `params[${str(key)}]`;
 }
 
 //query parameters are forwarded by name; an undefined one is dropped by the
@@ -144,9 +140,7 @@ export function queryObject(e: Endpoint, indent: string) {
         return "";
     }
 
-    const pairs = e.query
-        .map((q) => `${indent}    ${quoteKey(q)}: ${access(q)},`)
-        .join("\n");
+    const pairs = e.query.map((q) => `${indent}    ${quoteKey(q)}: ${access(q)},`).join("\n");
 
     return `\n${indent}query: {\n${pairs}\n${indent}},`;
 }
@@ -172,11 +166,7 @@ export function staticHeaders(e: Endpoint, vars: Record<string, string>) {
     return out;
 }
 
-export function headersObject(
-    e: Endpoint,
-    vars: Record<string, string>,
-    indent: string
-) {
+export function headersObject(e: Endpoint, vars: Record<string, string>, indent: string) {
     const headers = staticHeaders(e, vars);
     const keys = Object.keys(headers);
 
@@ -184,9 +174,7 @@ export function headersObject(
         return "";
     }
 
-    const pairs = keys
-        .map((k) => `${indent}    ${quoteKey(k)}: ${str(headers[k])},`)
-        .join("\n");
+    const pairs = keys.map((k) => `${indent}    ${quoteKey(k)}: ${str(headers[k])},`).join("\n");
 
     return `\n${indent}headers: {\n${pairs}\n${indent}},`;
 }

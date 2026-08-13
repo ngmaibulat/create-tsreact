@@ -11,7 +11,7 @@ import type { Opts } from "./cli.js";
 export default function genExpoAppTsx(o: Opts) {
     const query = o.api
         ? {
-              imports: `import { QueryClient, QueryClientProvider } from '@tanstack/react-query';\n`,
+              imports: `import { QueryClient, QueryClientProvider } from "@tanstack/react-query";\n`,
               client: `\nconst queryClient = new QueryClient();\n`,
               open: `\n            <QueryClientProvider client={queryClient}>`,
               close: `\n            </QueryClientProvider>`,
@@ -23,11 +23,10 @@ export default function genExpoAppTsx(o: Opts) {
     const inner = o.api ? "    " : "";
 
     const tpl = `
-${query.imports}import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+${query.imports}import { StatusBar } from "expo-status-bar";
+import { StyleSheet, Text, View } from "react-native";
 ${query.client}
-export default function App()
-{
+export default function App() {
     return (
         <View style={styles.container}>${query.open}
 ${inner}            <Text style={styles.title}>Hello World from ${o.name} app!</Text>
@@ -39,9 +38,9 @@ ${inner}            <StatusBar style="auto" />${query.close}
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
-        alignItems: 'center',
-        justifyContent: 'center',
+        backgroundColor: "#fff",
+        alignItems: "center",
+        justifyContent: "center",
     },
     title: {
         fontSize: 18,

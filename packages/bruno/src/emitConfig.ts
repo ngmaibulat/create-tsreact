@@ -15,7 +15,7 @@ export default function configTs(spec: ApiSpec) {
 
     const note = spec.secrets.length
         ? `\n//The collection declares these as secrets: ${spec.secrets.join(
-              ", "
+              ", ",
           )}.\n//Bruno keeps their values outside the .bru files, so they are not here either.`
         : "";
 

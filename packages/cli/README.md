@@ -8,10 +8,12 @@ file, no plugin system, no abstraction to learn before you can change how your
 code is compiled.
 
 The **oxc lane** — `vite-spa`, `next-drizzle`, `fastify-react` — is for when
-you want the ecosystem rather than the minimalism: Vite 8, Next 16, Tailwind 4
-on by default, and oxlint + oxfmt instead of ESLint + Prettier.
+you want the ecosystem rather than the minimalism: Vite 8 (rolldown under it),
+Next 16 and Tailwind 4 on by default.
 
-Both lanes generate TypeScript 7 and React 19, and both compose with `--api`.
+Both lanes generate TypeScript 7 and React 19, both compose with `--api`, and
+**every** template — `expo` included — lints and formats with `oxlint` and
+`oxfmt`. No ESLint, no Prettier anywhere.
 
 ### Use
 
@@ -50,11 +52,16 @@ The last three templates have Tailwind 4 already — their bundler compiles it,
 so there is no separate CSS watcher. `--tailwind` is accepted there as a no-op,
 and `--daisyui` still adds the plugin on top.
 
-And one adds a typed backend client to any template:
+And two more work with any template:
 
 | Flag          | What it does                                                 |
 | ------------- | ------------------------------------------------------------ |
 | `--api <dir>` | Generates a typed client from a Bruno collection — see below |
+| `--husky`     | Adds a pre-commit hook: format staged files, then lint       |
+
+`--husky` needs the repository to exist before you install: husky sets the hook
+up from a `prepare` script, and outside a repo it exits quietly. Run `git init`
+first, or `pnpm run prepare` afterwards.
 
 `--api` reads a [Bruno](https://www.usebruno.com/) collection, executes its safe
 requests once, infers TypeScript types from the real responses, and emits a

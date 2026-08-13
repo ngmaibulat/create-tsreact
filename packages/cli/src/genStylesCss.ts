@@ -1,3 +1,4 @@
+import { standaloneTailwind } from "./cli.js";
 import type { Opts } from "./cli.js";
 
 //Tailwind v4 is configured in css, not in a tailwind.config.js - that file is
@@ -25,12 +26,7 @@ export default function genStylesCss(o: Opts) {
     //bundler's own module graph, so the scan is already exactly the files
     //that ship - and the paths below are wrong for those layouts anyway,
     //neither of which has a public/index.html.
-    const standalone =
-        o.template === "react" ||
-        o.template === "pwa" ||
-        o.template === "extension";
-
-    const sources = standalone
+    const sources = standaloneTailwind(o)
         ? `
 /* v4 also finds these on its own, but naming them keeps the scan predictable
    and independent of what happens to be gitignored at the time */

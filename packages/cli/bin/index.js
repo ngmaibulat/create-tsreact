@@ -1,5 +1,564 @@
 #!/usr/bin/env node
 
+// src/index.ts
+import fs3 from "fs";
+import path3 from "path";
+
+// ../bruno/src/collection.ts
+import fs from "fs";
+import path from "path";
+
+// ../bruno/src/error.ts
+var CliError = class extends Error {
+};
+
+// ../bruno/src/parse.ts
+function isTextBlock(name) {
+  return name.startsWith("body") || name.startsWith("script") || name === "tests" || name === "docs";
+}
+function isNameChar(ch) {
+  return /[\w:.-]/.test(ch);
+}
+function findEnd(src, from, open, isText) {
+  const close = open === "{" ? "}" : "]";
+  let depth = 1;
+  let i = from;
+  while (i < src.length) {
+    const ch = src[i];
+    if (isText && src.startsWith("'''", i)) {
+      const end = src.indexOf("'''", i + 3);
+      i = end === -1 ? src.length : end + 3;
+      continue;
+    }
+    if (isText && ch === '"') {
+      i++;
+      while (i < src.length && src[i] !== '"') {
+        i += src[i] === "\\" ? 2 : 1;
+      }
+      i++;
+      continue;
+    }
+    if (ch === open) {
+      depth++;
+    } else if (ch === close) {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
+    }
+    i++;
+  }
+  return -1;
+}
+function parseBru(src, file) {
+  const blocks = /* @__PURE__ */ new Map();
+  let i = 0;
+  while (i < src.length) {
+    while (i < src.length && /\s/.test(src[i])) {
+      i++;
+    }
+    if (src[i] === "#") {
+      const nl = src.indexOf("\n", i);
+      i = nl === -1 ? src.length : nl + 1;
+      continue;
+    }
+    if (i >= src.length) {
+      break;
+    }
+    const start = i;
+    while (i < src.length && isNameChar(src[i])) {
+      i++;
+    }
+    const name = src.slice(start, i);
+    while (i < src.length && /[ \t]/.test(src[i])) {
+      i++;
+    }
+    const open = src[i];
+    if (!name || open !== "{" && open !== "[") {
+      throw new CliError(`Could not parse ${file}: expected a block at character ${start}`);
+    }
+    const isText = open === "{" && isTextBlock(name);
+    const end = findEnd(src, i + 1, open, isText);
+    if (end === -1) {
+      throw new CliError(`Could not parse ${file}: block "${name}" is never closed`);
+    }
+    const kind = open === "[" ? "list" : isText ? "text" : "dict";
+    blocks.set(name, { name, kind, content: src.slice(i + 1, end) });
+    i = end + 1;
+  }
+  return blocks;
+}
+function entries(block) {
+  if (!block) {
+    return [];
+  }
+  const lines = block.content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+    const colon = line.indexOf(":");
+    if (colon === -1) {
+      continue;
+    }
+    const raw = line.slice(0, colon).trim();
+    const enabled = !raw.startsWith("~");
+    const key = enabled ? raw : raw.slice(1).trim();
+    let value2 = line.slice(colon + 1).trim();
+    if (value2 === "'''") {
+      const body3 = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== "'''") {
+        body3.push(lines[i]);
+        i++;
+      }
+      value2 = dedent(body3).join("\n");
+    }
+    out.push({ key, value: value2, enabled });
+  }
+  return out;
+}
+function dict(block) {
+  const out = {};
+  for (const e of entries(block)) {
+    if (e.enabled) {
+      out[e.key] = e.value;
+    }
+  }
+  return out;
+}
+function list(block) {
+  if (!block) {
+    return [];
+  }
+  return block.content.split("\n").map((l) => l.trim().replace(/,$/, "")).filter((l) => l && !l.startsWith("#"));
+}
+function dedent(lines) {
+  const width = lines.filter((l) => l.trim()).reduce((min, l) => Math.min(min, l.length - l.trimStart().length), Infinity);
+  if (!Number.isFinite(width) || width === 0) {
+    return lines;
+  }
+  return lines.map((l) => l.trim() ? l.slice(width) : l);
+}
+function text(block) {
+  if (!block) {
+    return void 0;
+  }
+  const lines = block.content.split("\n");
+  while (lines.length && !lines[0].trim()) {
+    lines.shift();
+  }
+  while (lines.length && !lines[lines.length - 1].trim()) {
+    lines.pop();
+  }
+  return lines.length ? dedent(lines).join("\n") : void 0;
+}
+
+// ../bruno/src/spec.ts
+var METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
+var SAFE = ["get", "head"];
+var SAMPLE_MODES = ["safe", "all", "none"];
+var SAMPLES_VERSION = 1;
+function origins(spec) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const e of spec.endpoints) {
+    const url = substitute(e.url, spec.vars);
+    try {
+      seen.add(new URL(url).origin + "/*");
+    } catch {
+    }
+  }
+  return [...seen].sort();
+}
+function substitute(text2, vars) {
+  return text2.replace(
+    /\{\{\s*([\w.-]+)\s*\}\}/g,
+    (whole, key) => key in vars ? vars[key] : whole
+  );
+}
+function unresolved(text2) {
+  const out = /* @__PURE__ */ new Set();
+  for (const m of text2.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)) {
+    out.add(m[1]);
+  }
+  return [...out];
+}
+
+// ../bruno/src/collection.ts
+var IGNORED = /* @__PURE__ */ new Set(["node_modules", "environments"]);
+var NOT_REQUESTS = /* @__PURE__ */ new Set(["collection.bru", "folder.bru"]);
+function walk(dir, base = "", all = false) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") || IGNORED.has(entry.name)) {
+      continue;
+    }
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...walk(full, base ? `${base}/${entry.name}` : entry.name, all));
+      continue;
+    }
+    if (entry.name.endsWith(".bru") && (all || !NOT_REQUESTS.has(entry.name))) {
+      out.push({ file: full, folder: base });
+    }
+  }
+  return out;
+}
+function slug(name) {
+  const words = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (words.length === 0) {
+    return "_";
+  }
+  const joined = words.map(
+    (w, i) => i === 0 ? w[0].toLowerCase() + w.slice(1) : w[0].toUpperCase() + w.slice(1)
+  ).join("");
+  return /^[0-9]/.test(joined) ? `_${joined}` : joined;
+}
+function pathParams(url) {
+  return [...url.matchAll(/\/:(\w+)/g)].map((m) => m[1]);
+}
+function splitQuery(url) {
+  const at = url.indexOf("?");
+  if (at === -1) {
+    return { url, keys: [] };
+  }
+  const keys = url.slice(at + 1).split("&").map((pair) => pair.split("=")[0].trim()).filter(Boolean);
+  return { url: url.slice(0, at), keys };
+}
+function splitQueryValues(url) {
+  const at = url.indexOf("?");
+  const out = {};
+  if (at === -1) {
+    return out;
+  }
+  for (const pair of url.slice(at + 1).split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq > 0) {
+      out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+    }
+  }
+  return out;
+}
+function readRequest(file, folder) {
+  const blocks = parseBru(fs.readFileSync(file, "utf8"), file);
+  const method = METHODS.find((m) => blocks.has(m));
+  if (!method) {
+    return void 0;
+  }
+  const call = dict(blocks.get(method));
+  const meta = dict(blocks.get("meta"));
+  const raw = call.url?.trim();
+  if (!raw) {
+    throw new CliError(`${file}: the ${method} block has no url`);
+  }
+  const { url, keys } = splitQuery(raw);
+  const query = new Set(keys);
+  for (const e of entries(blocks.get("params:query"))) {
+    if (e.enabled) {
+      query.add(e.key);
+    } else {
+      query.delete(e.key);
+    }
+  }
+  const name = slug(meta.name || path.basename(file, ".bru"));
+  const queryValues = dict(blocks.get("params:query"));
+  for (const [key, value2] of Object.entries(splitQueryValues(raw))) {
+    queryValues[key] ??= value2;
+  }
+  return {
+    name,
+    method,
+    url,
+    path: pathParams(url),
+    query: [...query],
+    pathValues: dict(blocks.get("params:path")),
+    queryValues,
+    headers: dict(blocks.get("headers")),
+    body: text(blocks.get("body:json")),
+    auth: call.auth && call.auth !== "none" ? call.auth : void 0,
+    folder,
+    seq: Number(meta.seq) || 0
+  };
+}
+function dedupe(endpoints) {
+  const taken = /* @__PURE__ */ new Set();
+  for (const e of endpoints) {
+    if (!taken.has(e.name)) {
+      taken.add(e.name);
+      continue;
+    }
+    const prefixed = slug(`${e.folder} ${e.name}`);
+    let next = taken.has(prefixed) ? `${prefixed}${e.seq}` : prefixed;
+    for (let n = 2; taken.has(next); n++) {
+      next = `${prefixed}${n}`;
+    }
+    e.name = next;
+    taken.add(next);
+  }
+}
+function readEnvironment(dir, wanted) {
+  const envDir = path.join(dir, "environments");
+  if (!fs.existsSync(envDir)) {
+    if (wanted) {
+      throw new CliError(
+        `No environments/ directory in ${dir}, so --api-env ${wanted} cannot be resolved`
+      );
+    }
+    return { vars: {}, secrets: [] };
+  }
+  const files = fs.readdirSync(envDir).filter((f) => f.endsWith(".bru")).sort();
+  if (files.length === 0) {
+    return { vars: {}, secrets: [] };
+  }
+  const names = files.map((f) => path.basename(f, ".bru"));
+  if (!wanted && files.length > 1) {
+    throw new CliError(
+      `${dir} has several environments - pick one with --api-env: ${names.join(", ")}`
+    );
+  }
+  const chosen = wanted ?? names[0];
+  if (!names.includes(chosen)) {
+    throw new CliError(`Unknown environment "${chosen}". Available: ${names.join(", ")}`);
+  }
+  const blocks = parseBru(
+    fs.readFileSync(path.join(envDir, `${chosen}.bru`), "utf8"),
+    path.join(envDir, `${chosen}.bru`)
+  );
+  return {
+    vars: dict(blocks.get("vars")),
+    //Bruno stores only the *names* of secrets in the file - the values
+    //live in its own store, so they can only come from the environment
+    secrets: list(blocks.get("vars:secret"))
+  };
+}
+function collectionFiles(dir) {
+  const out = {};
+  const add = (from, rel) => {
+    out[rel] = fs.readFileSync(from, "utf8");
+  };
+  const brunoJson = path.join(dir, "bruno.json");
+  if (fs.existsSync(brunoJson)) {
+    add(brunoJson, "bruno.json");
+  }
+  const envDir = path.join(dir, "environments");
+  if (fs.existsSync(envDir)) {
+    for (const f of fs.readdirSync(envDir)) {
+      if (f.endsWith(".bru")) {
+        add(path.join(envDir, f), `environments/${f}`);
+      }
+    }
+  }
+  for (const { file } of walk(dir, "", true)) {
+    add(file, path.relative(dir, file).split(path.sep).join("/"));
+  }
+  return out;
+}
+function readCollection(dir, env2) {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    throw new CliError(`Not a Bruno collection directory: ${dir}`);
+  }
+  let collection = path.basename(path.resolve(dir));
+  const brunoJson = path.join(dir, "bruno.json");
+  if (fs.existsSync(brunoJson)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(brunoJson, "utf8"));
+      collection = parsed.name || collection;
+    } catch (err) {
+      throw new CliError(`${brunoJson} is not valid json: ${err.message}`);
+    }
+  }
+  const endpoints = [];
+  for (const { file, folder } of walk(dir)) {
+    const endpoint = readRequest(file, folder);
+    if (endpoint) {
+      endpoints.push(endpoint);
+    }
+  }
+  if (endpoints.length === 0) {
+    throw new CliError(`No requests found in ${dir}`);
+  }
+  endpoints.sort(
+    (a, b) => a.folder.localeCompare(b.folder) || a.seq - b.seq || a.name.localeCompare(b.name)
+  );
+  dedupe(endpoints);
+  return { collection, ...readEnvironment(dir, env2), endpoints };
+}
+
+// ../bruno/src/sample.ts
+var TIMEOUT_MS = 1e4;
+var CONCURRENCY = 4;
+function resolveVars(spec) {
+  const vars = { ...spec.vars };
+  const wanted = /* @__PURE__ */ new Set();
+  for (const e of spec.endpoints) {
+    for (const template of [e.url, ...Object.values(e.headers)]) {
+      for (const name of unresolved(substitute(template, vars))) {
+        wanted.add(name);
+      }
+    }
+  }
+  for (const name of wanted) {
+    const value2 = process.env[name];
+    if (value2 !== void 0) {
+      vars[name] = value2;
+    }
+  }
+  return vars;
+}
+function buildUrl(e, vars) {
+  let url = substitute(e.url, vars);
+  for (const name of e.path) {
+    const value2 = substitute(e.pathValues[name] ?? "", vars);
+    if (!value2) {
+      return { error: `no value for path parameter :${name}` };
+    }
+    url = url.replace(`/:${name}`, `/${encodeURIComponent(value2)}`);
+  }
+  const missing = unresolved(url);
+  if (missing.length) {
+    return {
+      error: `unresolved variable${missing.length > 1 ? "s" : ""} ${missing.map((m) => `{{${m}}}`).join(", ")} - set ${missing.join(
+        ", "
+      )} in the environment`
+    };
+  }
+  const pairs = e.query.map((key) => [key, substitute(e.queryValues[key] ?? "", vars)]).filter(([, value2]) => value2 && !unresolved(value2).length);
+  const search = pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+  return { url: search ? `${url}?${search}` : url };
+}
+function buildHeaders(e, vars) {
+  const out = {};
+  for (const [key, template] of Object.entries(e.headers)) {
+    const value2 = substitute(template, vars);
+    if (!unresolved(value2).length) {
+      out[key] = value2;
+    }
+  }
+  return out;
+}
+async function request(fetchFn, e, vars) {
+  const built = buildUrl(e, vars);
+  if (built.error) {
+    return { skipped: built.error };
+  }
+  const headers = buildHeaders(e, vars);
+  const init = { method: e.method.toUpperCase(), headers };
+  if (e.body && e.method !== "get" && e.method !== "head") {
+    init.body = substitute(e.body, vars);
+    headers["Content-Type"] ??= "application/json";
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  init.signal = controller.signal;
+  try {
+    const res = await fetchFn(built.url, init);
+    if (!res.ok) {
+      return { skipped: `HTTP ${res.status}` };
+    }
+    const type = res.headers.get("content-type") ?? "";
+    const text2 = await res.text();
+    if (!text2.trim()) {
+      return { status: res.status, body: null };
+    }
+    try {
+      return { status: res.status, body: JSON.parse(text2) };
+    } catch {
+      return {
+        skipped: `response is not json${type ? ` (content-type: ${type})` : ""}`
+      };
+    }
+  } catch (err) {
+    const message = err.message || String(err);
+    return {
+      skipped: controller.signal.aborted ? `timed out after ${TIMEOUT_MS}ms` : `request failed: ${message}`
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function pool(items, run) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
+    while (next < items.length) {
+      await run(items[next++]);
+    }
+  });
+  await Promise.all(workers);
+}
+async function collect(spec, opts) {
+  const samples = {};
+  const todo = [];
+  for (const e of spec.endpoints) {
+    if (!opts.refresh && opts.previous[e.name]) {
+      samples[e.name] = opts.previous[e.name];
+      continue;
+    }
+    if (opts.mode === "none") {
+      samples[e.name] = { skipped: "not sampled (--api-sample=none)" };
+      continue;
+    }
+    if (opts.mode === "safe" && !SAFE.includes(e.method)) {
+      samples[e.name] = {
+        skipped: `${e.method.toUpperCase()} not sampled (--api-sample=safe)`
+      };
+      continue;
+    }
+    todo.push(e);
+  }
+  if (todo.length === 0) {
+    return samples;
+  }
+  const fetchFn = globalThis.fetch;
+  if (!fetchFn) {
+    throw new CliError(
+      "Sampling needs global fetch (Node 18+). Re-run with --api-sample=none."
+    );
+  }
+  const vars = resolveVars(spec);
+  await pool(todo, async (e) => {
+    samples[e.name] = await request(fetchFn, e, vars);
+  });
+  const failures = todo.filter((e) => "skipped" in samples[e.name]);
+  if (failures.length === todo.length) {
+    const first = samples[failures[0].name];
+    throw new CliError(
+      `Could not sample any endpoint (${todo.length} tried).
+First failure - ${failures[0].name}: ${first.skipped}
+Re-run with --api-sample=none to generate without sampling.`
+    );
+  }
+  return samples;
+}
+function serialise(spec, samples) {
+  const ordered = {};
+  for (const e of spec.endpoints) {
+    if (samples[e.name]) {
+      ordered[e.name] = samples[e.name];
+    }
+  }
+  const file = {
+    version: SAMPLES_VERSION,
+    endpoints: ordered
+  };
+  return JSON.stringify(file, null, 4);
+}
+function deserialise(text2, file) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text2);
+  } catch (err) {
+    throw new CliError(`${file} is not valid json: ${err.message}`);
+  }
+  if (parsed.version !== SAMPLES_VERSION) {
+    throw new CliError(
+      `${file} was written by a different version of create-tsreact (found ${parsed.version}, expected ${SAMPLES_VERSION}). Delete it and re-run with --refresh.`
+    );
+  }
+  return parsed.endpoints ?? {};
+}
+
 // ../../node_modules/.pnpm/chalk@5.6.2/node_modules/chalk/source/vendor/ansi-styles/index.js
 var ANSI_BACKGROUND_OFFSET = 10;
 var wrapAnsi16 = (offset = 0) => (code) => `\x1B[${code + offset}m`;
@@ -495,299 +1054,6 @@ var chalk = createChalk();
 var chalkStderr = createChalk({ level: stderrColor ? stderrColor.level : 0 });
 var source_default = chalk;
 
-// src/index.ts
-import fs3 from "fs";
-import path3 from "path";
-
-// src/cli.ts
-import fs from "fs";
-import path from "path";
-
-// ../bruno/src/error.ts
-var CliError = class extends Error {
-};
-
-// ../bruno/src/spec.ts
-var METHODS = [
-  "get",
-  "post",
-  "put",
-  "patch",
-  "delete",
-  "head",
-  "options"
-];
-var SAFE = ["get", "head"];
-var SAMPLE_MODES = ["safe", "all", "none"];
-var SAMPLES_VERSION = 1;
-function origins(spec) {
-  const seen = /* @__PURE__ */ new Set();
-  for (const e of spec.endpoints) {
-    const url = substitute(e.url, spec.vars);
-    try {
-      seen.add(new URL(url).origin + "/*");
-    } catch {
-    }
-  }
-  return [...seen].sort();
-}
-function substitute(text2, vars) {
-  return text2.replace(
-    /\{\{\s*([\w.-]+)\s*\}\}/g,
-    (whole, key) => key in vars ? vars[key] : whole
-  );
-}
-function unresolved(text2) {
-  const out = /* @__PURE__ */ new Set();
-  for (const m of text2.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)) {
-    out.add(m[1]);
-  }
-  return [...out];
-}
-
-// src/cli.ts
-var TEMPLATES = [
-  "react",
-  "extension",
-  "pwa",
-  "expo",
-  "vite-spa",
-  "next-drizzle",
-  "fastify-react"
-];
-var DESCRIPTIONS = {
-  react: "browser app, esbuild dev server with live reload",
-  extension: "Chrome MV3 extension: popup + content script + background",
-  pwa: "installable offline app: manifest + service worker",
-  expo: "React Native app on Expo SDK 57 (metro, not esbuild)",
-  "vite-spa": "React SPA on Vite 8, Tailwind 4, oxlint + oxfmt",
-  "next-drizzle": "Next 16 (Turbopack) + Drizzle on SQLite/libsql",
-  "fastify-react": "workspaces monorepo: Fastify API + React on Vite"
-};
-var APPS = {
-  react: ["web"],
-  extension: ["extension"],
-  pwa: ["web"],
-  expo: ["mobile"],
-  "vite-spa": ["web"],
-  "next-drizzle": ["web"],
-  "fastify-react": ["web", "server"]
-};
-function appDir(o) {
-  return `apps/${APPS[o.template][0]}`;
-}
-function scope(o) {
-  return `@${o.name.toLowerCase()}`;
-}
-var TAILWIND_ALWAYS = [
-  "vite-spa",
-  "next-drizzle",
-  "fastify-react"
-];
-function readVersion() {
-  const url = new URL("../package.json", import.meta.url);
-  const pkg = JSON.parse(fs.readFileSync(url, "utf8"));
-  return pkg.version;
-}
-function validateName(name) {
-  if (!name) {
-    throw new CliError("App name must not be empty");
-  }
-  if (name.includes("..")) {
-    throw new CliError(`App name must not contain "..": ${name}`);
-  }
-  if (/[/\\]/.test(name)) {
-    throw new CliError(
-      `App name must not contain a path separator: ${name}`
-    );
-  }
-  if (/^[._]/.test(name)) {
-    throw new CliError(`App name must not start with "." or "_": ${name}`);
-  }
-  if (/["\\\p{Cc}]/u.test(name)) {
-    throw new CliError(
-      `App name contains an unsupported character: ${name}`
-    );
-  }
-  return name;
-}
-function assertTargetUsable(dir) {
-  if (!fs.existsSync(dir)) {
-    return;
-  }
-  if (!fs.statSync(dir).isDirectory()) {
-    throw new CliError(`Not a directory: ${dir}`);
-  }
-  const entries2 = fs.readdirSync(dir).filter((e) => e !== ".git");
-  if (entries2.length > 0) {
-    throw new CliError(`Directory is not empty: ${dir}`);
-  }
-}
-function recordedCollection(dir) {
-  return marker(dir, "api");
-}
-function recordedTemplate(dir) {
-  const recorded = marker(dir, "template");
-  return TEMPLATES.includes(recorded ?? "") ? recorded : void 0;
-}
-function marker(dir, key) {
-  const file = path.join(dir, "package.json");
-  if (!fs.existsSync(file)) {
-    return void 0;
-  }
-  try {
-    const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
-    const recorded = pkg?.tsreact?.[key];
-    return typeof recorded === "string" ? recorded : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function parseTemplate(value2) {
-  if (!value2) {
-    throw new CliError(
-      "--template needs a value: " + TEMPLATES.join(" | ")
-    );
-  }
-  if (!TEMPLATES.includes(value2)) {
-    throw new CliError(
-      `Unknown template "${value2}". Expected: ${TEMPLATES.join(" | ")}`
-    );
-  }
-  return value2;
-}
-function parseMode(value2) {
-  if (!value2 || !SAMPLE_MODES.includes(value2)) {
-    throw new CliError(
-      `--api-sample expects one of: ${SAMPLE_MODES.join(" | ")}`
-    );
-  }
-  return value2;
-}
-function value(argv, i, flag) {
-  const arg = argv[i];
-  if (arg === flag) {
-    const next = argv[i + 1];
-    if (next === void 0 || next.startsWith("-")) {
-      throw new CliError(`${flag} needs a value`);
-    }
-    return { value: next, skip: 1 };
-  }
-  return { value: arg.slice(flag.length + 1), skip: 0 };
-}
-function parseArgs(argv) {
-  let template = "react";
-  let tailwind = false;
-  let daisyui = false;
-  let target = "";
-  let api = "";
-  let env2;
-  let mode = "safe";
-  let refresh = false;
-  let list2 = false;
-  let json = false;
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--help" || arg === "-h") {
-      return { kind: "help" };
-    }
-    if (arg === "--version" || arg === "-v") {
-      return { kind: "version" };
-    }
-    if (arg === "--list-templates") {
-      list2 = true;
-      continue;
-    }
-    if (arg === "--json") {
-      json = true;
-      continue;
-    }
-    if (arg === "--template" || arg === "-t") {
-      template = parseTemplate(argv[++i]);
-      continue;
-    }
-    if (arg.startsWith("--template=")) {
-      template = parseTemplate(arg.slice("--template=".length));
-      continue;
-    }
-    if (arg === "--tailwind") {
-      tailwind = true;
-      continue;
-    }
-    if (arg === "--daisyui") {
-      daisyui = true;
-      continue;
-    }
-    if (arg === "--api" || arg.startsWith("--api=")) {
-      const got = value(argv, i, "--api");
-      api = got.value;
-      i += got.skip;
-      continue;
-    }
-    if (arg === "--api-env" || arg.startsWith("--api-env=")) {
-      const got = value(argv, i, "--api-env");
-      env2 = got.value;
-      i += got.skip;
-      continue;
-    }
-    if (arg === "--api-sample" || arg.startsWith("--api-sample=")) {
-      const got = value(argv, i, "--api-sample");
-      mode = parseMode(got.value);
-      i += got.skip;
-      continue;
-    }
-    if (arg === "--refresh") {
-      refresh = true;
-      continue;
-    }
-    if (arg.startsWith("-")) {
-      throw new CliError(`Unknown option: ${arg}`);
-    }
-    if (target) {
-      throw new CliError(`Unexpected argument: ${arg}`);
-    }
-    target = arg;
-  }
-  if (list2) {
-    return { kind: "templates", json };
-  }
-  if (json) {
-    throw new CliError("--json only applies with --list-templates");
-  }
-  if (target === "api" && recordedCollection(process.cwd())) {
-    return { kind: "api", dir: process.cwd(), env: env2, mode, refresh };
-  }
-  if (daisyui) {
-    tailwind = true;
-  }
-  if (TAILWIND_ALWAYS.includes(template)) {
-    tailwind = true;
-  }
-  if (tailwind && template === "expo") {
-    throw new CliError(
-      "--tailwind is not supported by the expo template: React Native has no CSS"
-    );
-  }
-  if (refresh && !api) {
-    throw new CliError("--refresh only applies with --api");
-  }
-  if (!target) {
-    return { kind: "usage" };
-  }
-  const normalised = path.normalize(target);
-  const dir = path.resolve(normalised);
-  const name = validateName(path.basename(dir));
-  assertTargetUsable(dir);
-  return {
-    kind: "create",
-    dir,
-    opts: { name, template, tailwind, daisyui },
-    //resolved against the cwd, not the target: --api points at a
-    //collection that already exists, while the target must be empty
-    api: api ? { dir: path.resolve(api), env: env2, mode, refresh } : void 0
-  };
-}
-
 // ../bruno/src/emit.ts
 function pascal(name) {
   return name[0].toUpperCase() + name.slice(1);
@@ -825,9 +1091,7 @@ function resolvedUrls(spec) {
   return out;
 }
 function baseUrl(spec) {
-  const urls = [...resolvedUrls(spec).values()].filter(
-    (u) => !unresolved(u).length
-  );
+  const urls = [...resolvedUrls(spec).values()].filter((u) => !unresolved(u).length);
   return commonPrefix(urls);
 }
 function pathOf(spec, e) {
@@ -1136,9 +1400,7 @@ function mutationsTs(spec) {
     const onSuccess = targets.length ? `
         onSuccess: () => {
             //${scope2} - edit this list to taste
-${targets.map(
-      (q) => `            client.invalidateQueries({ queryKey: keys.${q.name}.all });`
-    ).join("\n")}
+${targets.map((q) => `            client.invalidateQueries({ queryKey: keys.${q.name}.all });`).join("\n")}
         },` : "";
     const arrow = unwrap ? `(${vars.arg}: ${vars.type}) => {${unwrap}
             return request<${name}Response>({
@@ -1146,9 +1408,7 @@ ${targets.map(
                 path: ${path4},${queryObject(
       e,
       "                "
-    )}${headersObject(e, spec.vars, "                ")}${bodyField(
-      vars.body
-    )}
+    )}${headersObject(e, spec.vars, "                ")}${bodyField(vars.body)}
             });
         }` : `(${vars.arg ? `${vars.arg}: ${vars.type}` : ""}) =>
             request<${name}Response>({
@@ -1156,9 +1416,7 @@ ${targets.map(
                 path: ${path4},${queryObject(
       e,
       "                "
-    )}${headersObject(e, spec.vars, "                ")}${bodyField(
-      vars.body
-    )}
+    )}${headersObject(e, spec.vars, "                ")}${bodyField(vars.body)}
             })`;
     return `//${e.method.toUpperCase()} ${e.url}
 export function use${name}() {
@@ -1278,10 +1536,7 @@ function renderObject(obj, indent) {
   const inner = indent + "    ";
   const lines = [...obj.fields].map(([key, field]) => {
     const optional = field.seen < obj.total ? "?" : "";
-    return `${inner}${ident(key)}${optional}: ${render(
-      field.shape,
-      inner
-    )};`;
+    return `${inner}${ident(key)}${optional}: ${render(field.shape, inner)};`;
   });
   return `{
 ${lines.join("\n")}
@@ -1320,10 +1575,7 @@ function inferBody(e, vars) {
     return void 0;
   }
   const substituted = substitute(e.body, vars);
-  for (const text2 of [
-    substituted,
-    substituted.replace(/\{\{[\w.-]+\}\}/g, "x")
-  ]) {
+  for (const text2 of [substituted, substituted.replace(/\{\{[\w.-]+\}\}/g, "x")]) {
     try {
       return infer([JSON.parse(text2)]);
     } catch {
@@ -1336,9 +1588,7 @@ function responseType(spec, e) {
   if (!sample || "skipped" in sample) {
     const why = sample ? sample.skipped : "no sample";
     return `//not sampled: ${why}
-export type ${pascal(
-      e.name
-    )}Response = unknown;`;
+export type ${pascal(e.name)}Response = unknown;`;
   }
   return `export type ${pascal(e.name)}Response = ${infer([sample.body])};`;
 }
@@ -1346,9 +1596,7 @@ function typesTs(spec) {
   const blocks = [];
   for (const e of spec.endpoints) {
     const name = pascal(e.name);
-    const parts2 = [
-      `//${e.method.toUpperCase()} ${e.url}${e.folder ? `  (${e.folder})` : ""}`
-    ];
+    const parts2 = [`//${e.method.toUpperCase()} ${e.url}${e.folder ? `  (${e.folder})` : ""}`];
     if (hasParams(e)) {
       parts2.push(`export type ${name}Params = {
 ${paramsType(e)}
@@ -1369,182 +1617,243 @@ ${blocks.join("\n\n")}
   return tpl;
 }
 
-// ../bruno/src/sample.ts
-var TIMEOUT_MS = 1e4;
-var CONCURRENCY = 4;
-function resolveVars(spec) {
-  const vars = { ...spec.vars };
-  const wanted = /* @__PURE__ */ new Set();
-  for (const e of spec.endpoints) {
-    for (const template of [e.url, ...Object.values(e.headers)]) {
-      for (const name of unresolved(substitute(template, vars))) {
-        wanted.add(name);
-      }
-    }
-  }
-  for (const name of wanted) {
-    const value2 = process.env[name];
-    if (value2 !== void 0) {
-      vars[name] = value2;
-    }
-  }
-  return vars;
+// src/cli.ts
+import fs2 from "fs";
+import path2 from "path";
+var TEMPLATES = [
+  "react",
+  "extension",
+  "pwa",
+  "expo",
+  "vite-spa",
+  "next-drizzle",
+  "fastify-react"
+];
+var DESCRIPTIONS = {
+  react: "browser app, esbuild dev server with live reload",
+  extension: "Chrome MV3 extension: popup + content script + background",
+  pwa: "installable offline app: manifest + service worker",
+  expo: "React Native app on Expo SDK 57 (metro, not esbuild)",
+  "vite-spa": "React SPA on Vite 8, Tailwind 4, oxlint + oxfmt",
+  "next-drizzle": "Next 16 (Turbopack) + Drizzle on SQLite/libsql",
+  "fastify-react": "workspaces monorepo: Fastify API + React on Vite"
+};
+var APPS = {
+  react: ["web"],
+  extension: ["extension"],
+  pwa: ["web"],
+  expo: ["mobile"],
+  "vite-spa": ["web"],
+  "next-drizzle": ["web"],
+  "fastify-react": ["web", "server"]
+};
+function appDir(o) {
+  return `apps/${APPS[o.template][0]}`;
 }
-function buildUrl(e, vars) {
-  let url = substitute(e.url, vars);
-  for (const name of e.path) {
-    const value2 = substitute(e.pathValues[name] ?? "", vars);
-    if (!value2) {
-      return { error: `no value for path parameter :${name}` };
-    }
-    url = url.replace(`/:${name}`, `/${encodeURIComponent(value2)}`);
-  }
-  const missing = unresolved(url);
-  if (missing.length) {
-    return {
-      error: `unresolved variable${missing.length > 1 ? "s" : ""} ${missing.map((m) => `{{${m}}}`).join(", ")} - set ${missing.join(
-        ", "
-      )} in the environment`
-    };
-  }
-  const pairs = e.query.map((key) => [key, substitute(e.queryValues[key] ?? "", vars)]).filter(([, value2]) => value2 && !unresolved(value2).length);
-  const search = pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
-  return { url: search ? `${url}?${search}` : url };
+function scope(o) {
+  return `@${o.name.toLowerCase()}`;
 }
-function buildHeaders(e, vars) {
-  const out = {};
-  for (const [key, template] of Object.entries(e.headers)) {
-    const value2 = substitute(template, vars);
-    if (!unresolved(value2).length) {
-      out[key] = value2;
-    }
-  }
-  return out;
+var TAILWIND_ALWAYS = ["vite-spa", "next-drizzle", "fastify-react"];
+function standaloneTailwind(o) {
+  return o.tailwind && !TAILWIND_ALWAYS.includes(o.template);
 }
-async function request(fetchFn, e, vars) {
-  const built = buildUrl(e, vars);
-  if (built.error) {
-    return { skipped: built.error };
+function readVersion() {
+  const url = new URL("../package.json", import.meta.url);
+  const pkg = JSON.parse(fs2.readFileSync(url, "utf8"));
+  return pkg.version;
+}
+function validateName(name) {
+  if (!name) {
+    throw new CliError("App name must not be empty");
   }
-  const headers = buildHeaders(e, vars);
-  const init = { method: e.method.toUpperCase(), headers };
-  if (e.body && e.method !== "get" && e.method !== "head") {
-    init.body = substitute(e.body, vars);
-    headers["Content-Type"] ??= "application/json";
+  if (name.includes("..")) {
+    throw new CliError(`App name must not contain "..": ${name}`);
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  init.signal = controller.signal;
+  if (/[/\\]/.test(name)) {
+    throw new CliError(`App name must not contain a path separator: ${name}`);
+  }
+  if (/^[._]/.test(name)) {
+    throw new CliError(`App name must not start with "." or "_": ${name}`);
+  }
+  if (/["\\\p{Cc}]/u.test(name)) {
+    throw new CliError(`App name contains an unsupported character: ${name}`);
+  }
+  return name;
+}
+function assertTargetUsable(dir) {
+  if (!fs2.existsSync(dir)) {
+    return;
+  }
+  if (!fs2.statSync(dir).isDirectory()) {
+    throw new CliError(`Not a directory: ${dir}`);
+  }
+  const entries2 = fs2.readdirSync(dir).filter((e) => e !== ".git");
+  if (entries2.length > 0) {
+    throw new CliError(`Directory is not empty: ${dir}`);
+  }
+}
+function recordedCollection(dir) {
+  return marker(dir, "api");
+}
+function recordedTemplate(dir) {
+  const recorded = marker(dir, "template");
+  return TEMPLATES.includes(recorded ?? "") ? recorded : void 0;
+}
+function marker(dir, key) {
+  const file = path2.join(dir, "package.json");
+  if (!fs2.existsSync(file)) {
+    return void 0;
+  }
   try {
-    const res = await fetchFn(built.url, init);
-    if (!res.ok) {
-      return { skipped: `HTTP ${res.status}` };
-    }
-    const type = res.headers.get("content-type") ?? "";
-    const text2 = await res.text();
-    if (!text2.trim()) {
-      return { status: res.status, body: null };
-    }
-    try {
-      return { status: res.status, body: JSON.parse(text2) };
-    } catch {
-      return {
-        skipped: `response is not json${type ? ` (content-type: ${type})` : ""}`
-      };
-    }
-  } catch (err) {
-    const message = err.message || String(err);
-    return {
-      skipped: controller.signal.aborted ? `timed out after ${TIMEOUT_MS}ms` : `request failed: ${message}`
-    };
-  } finally {
-    clearTimeout(timer);
+    const pkg = JSON.parse(fs2.readFileSync(file, "utf8"));
+    const recorded = pkg?.tsreact?.[key];
+    return typeof recorded === "string" ? recorded : void 0;
+  } catch {
+    return void 0;
   }
 }
-async function pool(items, run) {
-  let next = 0;
-  const workers = Array.from(
-    { length: Math.min(CONCURRENCY, items.length) },
-    async () => {
-      while (next < items.length) {
-        await run(items[next++]);
-      }
-    }
-  );
-  await Promise.all(workers);
+function parseTemplate(raw) {
+  if (!raw) {
+    throw new CliError("--template needs a value: " + TEMPLATES.join(" | "));
+  }
+  if (!TEMPLATES.includes(raw)) {
+    throw new CliError(`Unknown template "${raw}". Expected: ${TEMPLATES.join(" | ")}`);
+  }
+  return raw;
 }
-async function collect(spec, opts) {
-  const samples = {};
-  const todo = [];
-  for (const e of spec.endpoints) {
-    if (!opts.refresh && opts.previous[e.name]) {
-      samples[e.name] = opts.previous[e.name];
-      continue;
-    }
-    if (opts.mode === "none") {
-      samples[e.name] = { skipped: "not sampled (--api-sample=none)" };
-      continue;
-    }
-    if (opts.mode === "safe" && !SAFE.includes(e.method)) {
-      samples[e.name] = {
-        skipped: `${e.method.toUpperCase()} not sampled (--api-sample=safe)`
-      };
-      continue;
-    }
-    todo.push(e);
+function parseMode(raw) {
+  if (!raw || !SAMPLE_MODES.includes(raw)) {
+    throw new CliError(`--api-sample expects one of: ${SAMPLE_MODES.join(" | ")}`);
   }
-  if (todo.length === 0) {
-    return samples;
+  return raw;
+}
+function value(argv, i, flag) {
+  const arg = argv[i];
+  if (arg === flag) {
+    const next = argv[i + 1];
+    if (next === void 0 || next.startsWith("-")) {
+      throw new CliError(`${flag} needs a value`);
+    }
+    return { value: next, skip: 1 };
   }
-  const fetchFn = globalThis.fetch;
-  if (!fetchFn) {
+  return { value: arg.slice(flag.length + 1), skip: 0 };
+}
+function parseArgs(argv) {
+  let template = "react";
+  let tailwind = false;
+  let daisyui = false;
+  let husky = false;
+  let target = "";
+  let api = "";
+  let env2;
+  let mode = "safe";
+  let refresh = false;
+  let list2 = false;
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") {
+      return { kind: "help" };
+    }
+    if (arg === "--version" || arg === "-v") {
+      return { kind: "version" };
+    }
+    if (arg === "--list-templates") {
+      list2 = true;
+      continue;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg === "--template" || arg === "-t") {
+      template = parseTemplate(argv[++i]);
+      continue;
+    }
+    if (arg.startsWith("--template=")) {
+      template = parseTemplate(arg.slice("--template=".length));
+      continue;
+    }
+    if (arg === "--tailwind") {
+      tailwind = true;
+      continue;
+    }
+    if (arg === "--daisyui") {
+      daisyui = true;
+      continue;
+    }
+    if (arg === "--husky") {
+      husky = true;
+      continue;
+    }
+    if (arg === "--api" || arg.startsWith("--api=")) {
+      const got = value(argv, i, "--api");
+      api = got.value;
+      i += got.skip;
+      continue;
+    }
+    if (arg === "--api-env" || arg.startsWith("--api-env=")) {
+      const got = value(argv, i, "--api-env");
+      env2 = got.value;
+      i += got.skip;
+      continue;
+    }
+    if (arg === "--api-sample" || arg.startsWith("--api-sample=")) {
+      const got = value(argv, i, "--api-sample");
+      mode = parseMode(got.value);
+      i += got.skip;
+      continue;
+    }
+    if (arg === "--refresh") {
+      refresh = true;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      throw new CliError(`Unknown option: ${arg}`);
+    }
+    if (target) {
+      throw new CliError(`Unexpected argument: ${arg}`);
+    }
+    target = arg;
+  }
+  if (list2) {
+    return { kind: "templates", json };
+  }
+  if (json) {
+    throw new CliError("--json only applies with --list-templates");
+  }
+  if (target === "api" && recordedCollection(process.cwd())) {
+    return { kind: "api", dir: process.cwd(), env: env2, mode, refresh };
+  }
+  if (daisyui) {
+    tailwind = true;
+  }
+  if (TAILWIND_ALWAYS.includes(template)) {
+    tailwind = true;
+  }
+  if (tailwind && template === "expo") {
     throw new CliError(
-      "Sampling needs global fetch (Node 18+). Re-run with --api-sample=none."
+      "--tailwind is not supported by the expo template: React Native has no CSS"
     );
   }
-  const vars = resolveVars(spec);
-  await pool(todo, async (e) => {
-    samples[e.name] = await request(fetchFn, e, vars);
-  });
-  const failures = todo.filter((e) => "skipped" in samples[e.name]);
-  if (failures.length === todo.length) {
-    const first = samples[failures[0].name];
-    throw new CliError(
-      `Could not sample any endpoint (${todo.length} tried).
-First failure - ${failures[0].name}: ${first.skipped}
-Re-run with --api-sample=none to generate without sampling.`
-    );
+  if (refresh && !api) {
+    throw new CliError("--refresh only applies with --api");
   }
-  return samples;
-}
-function serialise(spec, samples) {
-  const ordered = {};
-  for (const e of spec.endpoints) {
-    if (samples[e.name]) {
-      ordered[e.name] = samples[e.name];
-    }
+  if (!target) {
+    return { kind: "usage" };
   }
-  const file = {
-    version: SAMPLES_VERSION,
-    endpoints: ordered
+  const normalised = path2.normalize(target);
+  const dir = path2.resolve(normalised);
+  const name = validateName(path2.basename(dir));
+  assertTargetUsable(dir);
+  return {
+    kind: "create",
+    dir,
+    opts: { name, template, tailwind, daisyui, husky },
+    //resolved against the cwd, not the target: --api points at a
+    //collection that already exists, while the target must be empty
+    api: api ? { dir: path2.resolve(api), env: env2, mode, refresh } : void 0
   };
-  return JSON.stringify(file, null, 4);
-}
-function deserialise(text2, file) {
-  let parsed;
-  try {
-    parsed = JSON.parse(text2);
-  } catch (err) {
-    throw new CliError(
-      `${file} is not valid json: ${err.message}`
-    );
-  }
-  if (parsed.version !== SAMPLES_VERSION) {
-    throw new CliError(
-      `${file} was written by a different version of create-tsreact (found ${parsed.version}, expected ${SAMPLES_VERSION}). Delete it and re-run with --refresh.`
-    );
-  }
-  return parsed.endpoints ?? {};
 }
 
 // src/apiFiles.ts
@@ -1578,369 +1887,6 @@ function apiFiles(o, root = apiRoot(o)) {
     files[`${root}/mutations.ts`] = mutationsTs(spec);
   }
   return files;
-}
-
-// ../bruno/src/collection.ts
-import fs2 from "fs";
-import path2 from "path";
-
-// ../bruno/src/parse.ts
-function isTextBlock(name) {
-  return name.startsWith("body") || name.startsWith("script") || name === "tests" || name === "docs";
-}
-function isNameChar(ch) {
-  return /[\w:.-]/.test(ch);
-}
-function findEnd(src, from, open, text2) {
-  const close = open === "{" ? "}" : "]";
-  let depth = 1;
-  let i = from;
-  while (i < src.length) {
-    const ch = src[i];
-    if (text2 && src.startsWith("'''", i)) {
-      const end = src.indexOf("'''", i + 3);
-      i = end === -1 ? src.length : end + 3;
-      continue;
-    }
-    if (text2 && ch === '"') {
-      i++;
-      while (i < src.length && src[i] !== '"') {
-        i += src[i] === "\\" ? 2 : 1;
-      }
-      i++;
-      continue;
-    }
-    if (ch === open) {
-      depth++;
-    } else if (ch === close) {
-      depth--;
-      if (depth === 0) {
-        return i;
-      }
-    }
-    i++;
-  }
-  return -1;
-}
-function parseBru(src, file) {
-  const blocks = /* @__PURE__ */ new Map();
-  let i = 0;
-  while (i < src.length) {
-    while (i < src.length && /\s/.test(src[i])) {
-      i++;
-    }
-    if (src[i] === "#") {
-      const nl = src.indexOf("\n", i);
-      i = nl === -1 ? src.length : nl + 1;
-      continue;
-    }
-    if (i >= src.length) {
-      break;
-    }
-    const start = i;
-    while (i < src.length && isNameChar(src[i])) {
-      i++;
-    }
-    const name = src.slice(start, i);
-    while (i < src.length && /[ \t]/.test(src[i])) {
-      i++;
-    }
-    const open = src[i];
-    if (!name || open !== "{" && open !== "[") {
-      throw new CliError(
-        `Could not parse ${file}: expected a block at character ${start}`
-      );
-    }
-    const text2 = open === "{" && isTextBlock(name);
-    const end = findEnd(src, i + 1, open, text2);
-    if (end === -1) {
-      throw new CliError(
-        `Could not parse ${file}: block "${name}" is never closed`
-      );
-    }
-    const kind = open === "[" ? "list" : text2 ? "text" : "dict";
-    blocks.set(name, { name, kind, content: src.slice(i + 1, end) });
-    i = end + 1;
-  }
-  return blocks;
-}
-function entries(block) {
-  if (!block) {
-    return [];
-  }
-  const lines = block.content.split("\n");
-  const out = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line || line.startsWith("#")) {
-      continue;
-    }
-    const colon = line.indexOf(":");
-    if (colon === -1) {
-      continue;
-    }
-    const raw = line.slice(0, colon).trim();
-    const enabled = !raw.startsWith("~");
-    const key = enabled ? raw : raw.slice(1).trim();
-    let value2 = line.slice(colon + 1).trim();
-    if (value2 === "'''") {
-      const body3 = [];
-      i++;
-      while (i < lines.length && lines[i].trim() !== "'''") {
-        body3.push(lines[i]);
-        i++;
-      }
-      value2 = dedent(body3).join("\n");
-    }
-    out.push({ key, value: value2, enabled });
-  }
-  return out;
-}
-function dict(block) {
-  const out = {};
-  for (const e of entries(block)) {
-    if (e.enabled) {
-      out[e.key] = e.value;
-    }
-  }
-  return out;
-}
-function list(block) {
-  if (!block) {
-    return [];
-  }
-  return block.content.split("\n").map((l) => l.trim().replace(/,$/, "")).filter((l) => l && !l.startsWith("#"));
-}
-function dedent(lines) {
-  const width = lines.filter((l) => l.trim()).reduce(
-    (min, l) => Math.min(min, l.length - l.trimStart().length),
-    Infinity
-  );
-  if (!Number.isFinite(width) || width === 0) {
-    return lines;
-  }
-  return lines.map((l) => l.trim() ? l.slice(width) : l);
-}
-function text(block) {
-  if (!block) {
-    return void 0;
-  }
-  const lines = block.content.split("\n");
-  while (lines.length && !lines[0].trim()) {
-    lines.shift();
-  }
-  while (lines.length && !lines[lines.length - 1].trim()) {
-    lines.pop();
-  }
-  return lines.length ? dedent(lines).join("\n") : void 0;
-}
-
-// ../bruno/src/collection.ts
-var IGNORED = /* @__PURE__ */ new Set(["node_modules", "environments"]);
-var NOT_REQUESTS = /* @__PURE__ */ new Set(["collection.bru", "folder.bru"]);
-function walk(dir, base = "", all = false) {
-  const out = [];
-  for (const entry of fs2.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") || IGNORED.has(entry.name)) {
-      continue;
-    }
-    const full = path2.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(
-        ...walk(full, base ? `${base}/${entry.name}` : entry.name, all)
-      );
-      continue;
-    }
-    if (entry.name.endsWith(".bru") && (all || !NOT_REQUESTS.has(entry.name))) {
-      out.push({ file: full, folder: base });
-    }
-  }
-  return out;
-}
-function slug(name) {
-  const words = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
-  if (words.length === 0) {
-    return "_";
-  }
-  const joined = words.map(
-    (w, i) => i === 0 ? w[0].toLowerCase() + w.slice(1) : w[0].toUpperCase() + w.slice(1)
-  ).join("");
-  return /^[0-9]/.test(joined) ? `_${joined}` : joined;
-}
-function pathParams(url) {
-  return [...url.matchAll(/\/:(\w+)/g)].map((m) => m[1]);
-}
-function splitQuery(url) {
-  const at = url.indexOf("?");
-  if (at === -1) {
-    return { url, keys: [] };
-  }
-  const keys = url.slice(at + 1).split("&").map((pair) => pair.split("=")[0].trim()).filter(Boolean);
-  return { url: url.slice(0, at), keys };
-}
-function splitQueryValues(url) {
-  const at = url.indexOf("?");
-  const out = {};
-  if (at === -1) {
-    return out;
-  }
-  for (const pair of url.slice(at + 1).split("&")) {
-    const eq = pair.indexOf("=");
-    if (eq > 0) {
-      out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
-    }
-  }
-  return out;
-}
-function readRequest(file, folder) {
-  const blocks = parseBru(fs2.readFileSync(file, "utf8"), file);
-  const method = METHODS.find((m) => blocks.has(m));
-  if (!method) {
-    return void 0;
-  }
-  const call = dict(blocks.get(method));
-  const meta = dict(blocks.get("meta"));
-  const raw = call.url?.trim();
-  if (!raw) {
-    throw new CliError(`${file}: the ${method} block has no url`);
-  }
-  const { url, keys } = splitQuery(raw);
-  const query = new Set(keys);
-  for (const e of entries(blocks.get("params:query"))) {
-    if (e.enabled) {
-      query.add(e.key);
-    } else {
-      query.delete(e.key);
-    }
-  }
-  const name = slug(meta.name || path2.basename(file, ".bru"));
-  const queryValues = dict(blocks.get("params:query"));
-  for (const [key, value2] of Object.entries(splitQueryValues(raw))) {
-    queryValues[key] ??= value2;
-  }
-  return {
-    name,
-    method,
-    url,
-    path: pathParams(url),
-    query: [...query],
-    pathValues: dict(blocks.get("params:path")),
-    queryValues,
-    headers: dict(blocks.get("headers")),
-    body: text(blocks.get("body:json")),
-    auth: call.auth && call.auth !== "none" ? call.auth : void 0,
-    folder,
-    seq: Number(meta.seq) || 0
-  };
-}
-function dedupe(endpoints) {
-  const taken = /* @__PURE__ */ new Set();
-  for (const e of endpoints) {
-    if (!taken.has(e.name)) {
-      taken.add(e.name);
-      continue;
-    }
-    const prefixed = slug(`${e.folder} ${e.name}`);
-    let next = taken.has(prefixed) ? `${prefixed}${e.seq}` : prefixed;
-    for (let n = 2; taken.has(next); n++) {
-      next = `${prefixed}${n}`;
-    }
-    e.name = next;
-    taken.add(next);
-  }
-}
-function readEnvironment(dir, wanted) {
-  const envDir = path2.join(dir, "environments");
-  if (!fs2.existsSync(envDir)) {
-    if (wanted) {
-      throw new CliError(
-        `No environments/ directory in ${dir}, so --api-env ${wanted} cannot be resolved`
-      );
-    }
-    return { vars: {}, secrets: [] };
-  }
-  const files = fs2.readdirSync(envDir).filter((f) => f.endsWith(".bru")).sort();
-  if (files.length === 0) {
-    return { vars: {}, secrets: [] };
-  }
-  const names = files.map((f) => path2.basename(f, ".bru"));
-  if (!wanted && files.length > 1) {
-    throw new CliError(
-      `${dir} has several environments - pick one with --api-env: ${names.join(
-        ", "
-      )}`
-    );
-  }
-  const chosen = wanted ?? names[0];
-  if (!names.includes(chosen)) {
-    throw new CliError(
-      `Unknown environment "${chosen}". Available: ${names.join(", ")}`
-    );
-  }
-  const blocks = parseBru(
-    fs2.readFileSync(path2.join(envDir, `${chosen}.bru`), "utf8"),
-    path2.join(envDir, `${chosen}.bru`)
-  );
-  return {
-    vars: dict(blocks.get("vars")),
-    //Bruno stores only the *names* of secrets in the file - the values
-    //live in its own store, so they can only come from the environment
-    secrets: list(blocks.get("vars:secret"))
-  };
-}
-function collectionFiles(dir) {
-  const out = {};
-  const add = (from, rel) => {
-    out[rel] = fs2.readFileSync(from, "utf8");
-  };
-  const brunoJson = path2.join(dir, "bruno.json");
-  if (fs2.existsSync(brunoJson)) {
-    add(brunoJson, "bruno.json");
-  }
-  const envDir = path2.join(dir, "environments");
-  if (fs2.existsSync(envDir)) {
-    for (const f of fs2.readdirSync(envDir)) {
-      if (f.endsWith(".bru")) {
-        add(path2.join(envDir, f), `environments/${f}`);
-      }
-    }
-  }
-  for (const { file } of walk(dir, "", true)) {
-    add(file, path2.relative(dir, file).split(path2.sep).join("/"));
-  }
-  return out;
-}
-function readCollection(dir, env2) {
-  if (!fs2.existsSync(dir) || !fs2.statSync(dir).isDirectory()) {
-    throw new CliError(`Not a Bruno collection directory: ${dir}`);
-  }
-  let collection = path2.basename(path2.resolve(dir));
-  const brunoJson = path2.join(dir, "bruno.json");
-  if (fs2.existsSync(brunoJson)) {
-    try {
-      const parsed = JSON.parse(fs2.readFileSync(brunoJson, "utf8"));
-      collection = parsed.name || collection;
-    } catch (err) {
-      throw new CliError(
-        `${brunoJson} is not valid json: ${err.message}`
-      );
-    }
-  }
-  const endpoints = [];
-  for (const { file, folder } of walk(dir)) {
-    const endpoint = readRequest(file, folder);
-    if (endpoint) {
-      endpoints.push(endpoint);
-    }
-  }
-  if (endpoints.length === 0) {
-    throw new CliError(`No requests found in ${dir}`);
-  }
-  endpoints.sort(
-    (a, b) => a.folder.localeCompare(b.folder) || a.seq - b.seq || a.name.localeCompare(b.name)
-  );
-  dedupe(endpoints);
-  return { collection, ...readEnvironment(dir, env2), endpoints };
 }
 
 // ../pm/src/pm.ts
@@ -1988,9 +1934,7 @@ function usage() {
 }
 function templateList(indent = "    ") {
   const width = Math.max(...TEMPLATES.map((t) => t.length));
-  return TEMPLATES.map(
-    (t) => `${indent}${t.padEnd(width)}  ${DESCRIPTIONS[t]}`
-  ).join("\n");
+  return TEMPLATES.map((t) => `${indent}${t.padEnd(width)}  ${DESCRIPTIONS[t]}`).join("\n");
 }
 function templatesJson() {
   return JSON.stringify(
@@ -2020,6 +1964,7 @@ Options:
     -t, --template <name>   ${names.join(" | ")}
         --tailwind          add Tailwind CSS v4
         --daisyui           add DaisyUI components (implies --tailwind)
+        --husky             add a pre-commit hook: format staged files, lint
         --api <dir>         generate a typed client from a Bruno collection
         --api-env <name>    which environments/<name>.bru to resolve vars from
         --api-sample <how>  safe (default) | all | none - see below
@@ -2047,6 +1992,7 @@ Examples:
     npx create-tsreact myapp --template pwa --daisyui
     npx create-tsreact myapp --template vite-spa
     npx create-tsreact myapp --template next-drizzle
+    npx create-tsreact myapp --template vite-spa --husky
     npx create-tsreact myapp --api ./bruno --api-env local
     npx create-tsreact .
 
@@ -2058,8 +2004,7 @@ must go after a "--" separator:
   console.log(msg);
 }
 function tailwindNote(o) {
-  const standalone = o.template === "react" || o.template === "pwa" || o.template === "extension";
-  if (!o.tailwind || !standalone) {
+  if (!standaloneTailwind(o)) {
     return "";
   }
   return source_default.yellowBright(`
@@ -2071,9 +2016,7 @@ function apiNote(o) {
   if (!o.api) {
     return "";
   }
-  const sampled = Object.values(o.api.samples).filter(
-    (s) => !("skipped" in s)
-  ).length;
+  const sampled = Object.values(o.api.samples).filter((s) => !("skipped" in s)).length;
   const total = o.api.endpoints.length;
   const root = apiRoot(o);
   return source_default.yellowBright(`
@@ -2089,9 +2032,26 @@ API. Read it before committing if that endpoint returns personal data.
   );
 }
 function steps(name, o) {
+  stepsFor(name, o);
+  if (o.husky) {
+    console.log(huskyNote());
+  }
+}
+function huskyNote() {
   const pm = detectPm();
-  const cd = name === "." ? "" : `
-    cd ${name}`;
+  return source_default.yellowBright(`
+The pre-commit hook:`) + source_default.greenBright(`
+    it formats staged files with oxfmt and then runs the linter.
+    "${pm.run("prepare")}" installs it, and the install above does that
+    for you - but only inside a git repository, which is why "git init"
+    comes first. Already installed? Run that command now.
+    `);
+}
+function stepsFor(name, o) {
+  const pm = detectPm();
+  const cd = (name === "." ? "" : `
+    cd ${name}`) + (o.husky ? `
+    git init` : "");
   const unpacked = name === "." ? "apps/extension/public" : `${name}/apps/extension/public`;
   if (o.template === "extension") {
     const msg2 = source_default.yellowBright(`
@@ -2240,7 +2200,7 @@ indent_size = 4
 // src/genExpoAppTsx.ts
 function genExpoAppTsx(o) {
   const query = o.api ? {
-    imports: `import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+    imports: `import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 `,
     client: `
 const queryClient = new QueryClient();
@@ -2252,11 +2212,10 @@ const queryClient = new QueryClient();
   } : { imports: "", client: "", open: "", close: "" };
   const inner = o.api ? "    " : "";
   const tpl = `
-${query.imports}import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+${query.imports}import { StatusBar } from "expo-status-bar";
+import { StyleSheet, Text, View } from "react-native";
 ${query.client}
-export default function App()
-{
+export default function App() {
     return (
         <View style={styles.container}>${query.open}
 ${inner}            <Text style={styles.title}>Hello World from ${o.name} app!</Text>
@@ -2268,9 +2227,9 @@ ${inner}            <StatusBar style="auto" />${query.close}
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
-        alignItems: 'center',
-        justifyContent: 'center',
+        backgroundColor: "#fff",
+        alignItems: "center",
+        justifyContent: "center",
     },
     title: {
         fontSize: 18,
@@ -2329,9 +2288,9 @@ yarn-error.*
 // src/genExpoIndexTs.ts
 function genExpoIndexTs() {
   const tpl = `
-import { registerRootComponent } from 'expo';
+import { registerRootComponent } from "expo";
 
-import App from './App';
+import App from "./App";
 
 registerRootComponent(App);
 `;
@@ -2394,6 +2353,50 @@ function genExpoTsConfig() {
   return tpl;
 }
 
+// src/genOxfmtrc.ts
+function genOxfmtrc(o) {
+  const tailwind = o.tailwind ? `
+    "sortTailwindcss": true,` : "";
+  const tpl = `
+{
+    "$schema": "./node_modules/oxfmt/configuration_schema.json",${tailwind}
+    "sortImports": true,
+    "ignorePatterns": ["src/api", "apps/*/src/api"]
+}
+`;
+  return tpl;
+}
+
+// src/genOxlintrc.ts
+function genOxlintrc(o) {
+  const rules = [`        "react/react-in-jsx-scope": "off"`];
+  if (o.template === "expo") {
+    rules.push(`        "react/style-prop-object": "off"`);
+  }
+  if (o.template === "pwa") {
+    rules.push(`        "unicorn/require-module-specifiers": "off"`);
+  }
+  const tpl = `
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": ["typescript", "unicorn", "oxc", "react"],
+    "categories": {
+        "correctness": "error",
+        "suspicious": "warn"
+    },
+    "rules": {
+${rules.join(",\n")}
+    },
+    "env": {
+        "builtin": true,
+        "browser": true
+    },
+    "ignorePatterns": ["dist", ".next", "out", "drizzle"]
+}
+`;
+  return tpl;
+}
+
 // src/genPnpmWorkspaceYaml.ts
 function genPnpmWorkspaceYaml(o) {
   const standalone = o.template === "react" || o.template === "pwa" || o.template === "extension";
@@ -2414,17 +2417,10 @@ allowBuilds:
   return tpl;
 }
 
-// src/genPrettierConfig.ts
-function genPrettierConfig() {
-  const tpl = `{}`;
-  return tpl;
-}
-
 // src/genRootPackageJson.ts
 function genRootPackageJson(o) {
   const pm = detectPm();
   const apps = APPS[o.template];
-  const oxc = o.template === "vite-spa" || o.template === "next-drizzle" || o.template === "fastify-react";
   const marker2 = o.api ? `
     "tsreact": {
         "api": "${o.api.dir}",
@@ -2432,13 +2428,11 @@ function genRootPackageJson(o) {
     },` : "";
   const api = o.api ? `
         "api:gen": "${pm.dlx} create-tsreact@latest api",` : "";
-  const src = apps.map((a) => `apps/${a}/src`).join(" ");
-  const quality = oxc ? `
+  const src = o.template === "expo" ? apps.map((a) => `apps/${a}/App.tsx apps/${a}/index.ts`).join(" ") : apps.map((a) => `apps/${a}/src`).join(" ");
+  const quality = `
         "lint": "oxlint",
         "format:check": "oxfmt --check ${src}",
-        "format:fix": "oxfmt ${src}",` : `
-        "format:check": "prettier ${src} --check",
-        "format:fix": "prettier ${src} --write",`;
+        "format:fix": "oxfmt ${src}",`;
   const dev = o.template === "expo" ? `
         "start": "pnpm -r run start",
         "android": "pnpm -r run android",
@@ -2454,9 +2448,15 @@ function genRootPackageJson(o) {
   const halves = o.template === "fastify-react" ? `
         "dev:server": "pnpm --filter ${scope(o)}/server run dev",
         "dev:web": "pnpm --filter ${scope(o)}/web run dev",` : "";
-  const tw = o.tailwind && !oxc ? `
+  const tw = standaloneTailwind(o) ? `
         "tw": "pnpm -r run tw",` : "";
-  const deps = oxc ? [`"oxfmt": "^0.62.0"`, `"oxlint": "^1.70.0"`] : [`"prettier": "^3.9.0"`];
+  const prepare = o.husky ? `
+        "prepare": "husky",` : "";
+  const deps = [`"oxfmt": "^0.62.0"`, `"oxlint": "^1.70.0"`];
+  if (o.husky) {
+    deps.push(`"husky": "^9.1.0"`, `"lint-staged": "^17.0.0"`);
+  }
+  deps.sort();
   const tpl = `
 {
     "name": "${o.name}",
@@ -2467,7 +2467,7 @@ function genRootPackageJson(o) {
     "engines": {
         "node": "^20.19.0 || >=22.12.0"
     },
-    "scripts": {${dev}${halves}${db}${tw}
+    "scripts": {${dev}${halves}${db}${tw}${prepare}
         "typecheck": "pnpm -r run typecheck",${quality}${api}
         "test": "echo 'Error: no test specified' && exit 1"
     },
@@ -2493,15 +2493,52 @@ var DESCRIPTIONS2 = {
   "fastify-react": "Fastify API and React client in one workspace"
 };
 
+// src/genHuskyPreCommit.ts
+function genHuskyPreCommit() {
+  const tpl = `
+pnpm exec lint-staged
+
+pnpm run lint
+`;
+  return tpl;
+}
+
+// src/genLintStagedrc.ts
+function genLintStagedrc(o) {
+  const pattern = (a) => o.template === "expo" ? `apps/${a}/*.{ts,tsx}` : `apps/${a}/src/**/*.{ts,tsx}`;
+  const globs = APPS[o.template].map(
+    (a) => `    "${pattern(a)}": "oxfmt --no-error-on-unmatched-pattern"`
+  );
+  const tpl = `
+{
+${globs.join(",\n")}
+}
+`;
+  return tpl;
+}
+
+// src/huskyFiles.ts
+function huskyFiles(o) {
+  if (!o.husky) {
+    return {};
+  }
+  return {
+    ".husky/pre-commit": genHuskyPreCommit(),
+    ".lintstagedrc.json": genLintStagedrc(o)
+  };
+}
+
 // src/presets/expo.ts
 function expo(o) {
   return {
     ...apiFiles(o),
+    ...huskyFiles(o),
     "package.json": genRootPackageJson(o),
     "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
     ".gitignore": genExpoGitIgnore(),
     ".editorconfig": genEditorConfig(),
-    ".prettierrc.json": genPrettierConfig(),
+    ".oxlintrc.json": genOxlintrc(o),
+    ".oxfmtrc.json": genOxfmtrc(o),
     "apps/mobile/package.json": genExpoPkgJson(o),
     "apps/mobile/app.json": genAppJson(o.name),
     "apps/mobile/tsconfig.json": genExpoTsConfig(),
@@ -2514,11 +2551,11 @@ function expo(o) {
 function genBackgroundTs(name) {
   const tpl = `
 chrome.runtime.onInstalled.addListener(() => {
-    console.log('${name}: installed');
+    console.log("${name}: installed");
 });
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
-    console.log('${name}: message', msg, 'from tab', sender.tab?.id);
+    console.log("${name}: message", msg, "from tab", sender.tab?.id);
 });
 `;
   return tpl;
@@ -2527,10 +2564,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 // src/genContentTs.ts
 function genContentTs(name) {
   const tpl = `
-console.log('${name}: content script running on', location.hostname);
+console.log("${name}: content script running on", location.hostname);
 
 //content scripts talk to the service worker over messages
-chrome.runtime.sendMessage({ type: 'pageview', url: location.href });
+chrome.runtime.sendMessage({ type: "pageview", url: location.href });
 `;
   return tpl;
 }
@@ -2602,11 +2639,7 @@ function genExtPkgJson(o) {
 
 // src/genGitIgnore.ts
 var OUTPUT = {
-  react: [
-    "apps/web/public/app.js",
-    "apps/web/public/app.css",
-    "apps/web/public/*.map"
-  ],
+  react: ["apps/web/public/app.js", "apps/web/public/app.css", "apps/web/public/*.map"],
   pwa: [
     "apps/web/public/app.js",
     "apps/web/public/app.css",
@@ -2792,8 +2825,7 @@ function genManifest(o) {
 
 // src/genNpmrc.ts
 function genNpmrc(o) {
-  const predev = o.tailwind && (o.template === "react" || o.template === "pwa" || o.template === "extension");
-  if (!predev) {
+  if (!standaloneTailwind(o)) {
     return "";
   }
   const tpl = `
@@ -2856,8 +2888,11 @@ function genPopupTsx(o) {
   const main2 = o.tailwind ? ` className="w-60 p-4"` : "";
   const h1 = o.tailwind ? ` className="mb-3 text-base font-semibold"` : "";
   const button = o.daisyui ? ` className="btn btn-primary btn-sm"` : "";
+  const buttonEl = o.daisyui ? `<button${button} onClick={onClick}>
+                clicked {clicks} times
+            </button>` : `<button onClick={onClick}>clicked {clicks} times</button>`;
   const query = o.api ? {
-    imports: `import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+    imports: `import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 `,
     client: `
 const queryClient = new QueryClient();
@@ -2865,31 +2900,30 @@ const queryClient = new QueryClient();
     open: `
     <QueryClientProvider client={queryClient}>
         `,
+    //the trailing comma is oxfmt's trailingComma: "all" default,
+    //applied to root.render's only argument now that it spans lines
     close: `
-    </QueryClientProvider>
+    </QueryClientProvider>,
 `
   } : { imports: "", client: "", open: "", close: "" };
   const tpl = `
-${query.imports}import { useEffect, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+${query.imports}import { useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
 
-import './popup.css';
+import "./popup.css";
 ${query.client}
-
-function Popup()
-{
+function Popup() {
     const [clicks, setClicks] = useState(0);
 
     //popup state is thrown away every time the popup closes, so keep it in
     //chrome.storage (declared in manifest.json under "permissions")
     useEffect(() => {
         chrome.storage.local
-            .get<{ clicks?: number }>('clicks')
+            .get<{ clicks?: number }>("clicks")
             .then((v) => setClicks(v.clicks ?? 0));
     }, []);
 
-    function onClick()
-    {
+    function onClick() {
         const next = clicks + 1;
         setClicks(next);
         chrome.storage.local.set({ clicks: next });
@@ -2898,12 +2932,12 @@ function Popup()
     return (
         <main${main2}>
             <h1${h1}>${o.name}</h1>
-            <button${button} onClick={onClick}>clicked {clicks} times</button>
+            ${buttonEl}
         </main>
     );
 }
 
-const container = document.getElementById('app')!;
+const container = document.getElementById("app")!;
 const root = createRoot(container);
 root.render(${query.open}<Popup />${query.close});
 `;
@@ -2918,8 +2952,7 @@ function genStylesCss(o) {
     logs: false;
 }` : "";
   const html = o.template === "extension" ? "popup.html" : "index.html";
-  const standalone = o.template === "react" || o.template === "pwa" || o.template === "extension";
-  const sources = standalone ? `
+  const sources = standaloneTailwind(o) ? `
 /* v4 also finds these on its own, but naming them keeps the scan predictable
    and independent of what happens to be gitignored at the time */
 @source "./**/*.{ts,tsx}";
@@ -2968,11 +3001,13 @@ function genTsConfig(o) {
 function extension(o) {
   const files = {
     ...apiFiles(o),
+    ...huskyFiles(o),
     "package.json": genRootPackageJson(o),
     "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
     ".gitignore": genGitIgnore(o),
     ".editorconfig": genEditorConfig(),
-    ".prettierrc.json": genPrettierConfig(),
+    ".oxlintrc.json": genOxlintrc(o),
+    ".oxfmtrc.json": genOxfmtrc(o),
     "apps/extension/package.json": genExtPkgJson(o),
     "apps/extension/tsconfig.json": genTsConfig(o),
     "apps/extension/public/manifest.json": genManifest(o),
@@ -3087,42 +3122,6 @@ createRoot(container).render(
   return tpl;
 }
 
-// src/genOxfmtrc.ts
-function genOxfmtrc() {
-  const tpl = `
-{
-    "$schema": "./node_modules/oxfmt/configuration_schema.json",
-    "sortTailwindcss": true,
-    "sortImports": true,
-    "ignorePatterns": ["src/api", "apps/web/src/api"]
-}
-`;
-  return tpl;
-}
-
-// src/genOxlintrc.ts
-function genOxlintrc() {
-  const tpl = `
-{
-    "$schema": "./node_modules/oxlint/configuration_schema.json",
-    "plugins": ["typescript", "unicorn", "oxc", "react"],
-    "categories": {
-        "correctness": "error",
-        "suspicious": "warn"
-    },
-    "rules": {
-        "react/react-in-jsx-scope": "off"
-    },
-    "env": {
-        "builtin": true,
-        "browser": true
-    },
-    "ignorePatterns": ["dist", ".next", "out", "drizzle"]
-}
-`;
-  return tpl;
-}
-
 // src/genRolldownConfig.ts
 function genRolldownConfig() {
   const tpl = `
@@ -3194,9 +3193,7 @@ function example(o) {
     return "";
   }
   const name = first.name;
-  const args = hasParams(first) ? `{ /* ${name[0].toUpperCase()}${name.slice(
-    1
-  )}Params, see ./api/types */ }` : "";
+  const args = hasParams(first) ? `{ /* ${name[0].toUpperCase()}${name.slice(1)}Params, see ./api/types */ }` : "";
   return `//Your API is wired up. To read from it:
 //
 //    import { useQuery } from "@tanstack/react-query";
@@ -3340,12 +3337,13 @@ function genViteTsConfig() {
 function fastifyReact(o) {
   return {
     ...apiFiles(o),
+    ...huskyFiles(o),
     "package.json": genRootPackageJson(o),
     "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
     ".gitignore": genGitIgnore(o),
     ".editorconfig": genEditorConfig(),
-    ".oxlintrc.json": genOxlintrc(),
-    ".oxfmtrc.json": genOxfmtrc(),
+    ".oxlintrc.json": genOxlintrc(o),
+    ".oxfmtrc.json": genOxfmtrc(o),
     "apps/server/package.json": genFastifyPackageJson(o),
     "apps/server/tsconfig.json": genServerTsConfig(),
     "apps/server/rolldown.config.ts": genRolldownConfig(),
@@ -3490,51 +3488,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return tpl;
 }
 
-// src/genNextPageTsx.ts
-function genNextPageTsx(o) {
-  const card = o.daisyui ? `<main className="card mx-auto mt-8 max-w-lg bg-base-100 shadow">
-            <div className="card-body">` : `<main className="mx-auto mt-8 max-w-lg rounded border border-slate-300 p-4">
-            <div>`;
-  const heading = o.daisyui ? `<h1 className="card-title">Hello World from ${o.name} app!</h1>` : `<h1 className="text-2xl font-bold">Hello World from ${o.name} app!</h1>`;
-  const tpl = `
-import { db } from "@/db";
-import { usersTable } from "@/db/schema";
-
-//not cached: the point of this page is to show what is in the database now
-export const dynamic = "force-dynamic";
-
-async function readUsers() {
-    try {
-        return { users: await db.select().from(usersTable), error: null };
-    } catch {
-        return { users: [], error: 'run "npm run db:push" to create the table' };
-    }
-}
-
-export default async function Home() {
-    const { users, error } = await readUsers();
-
-    return (
-        ${card}
-                ${heading}
-                <p className="mt-2 text-sm text-slate-500">
-                    {error ?? \`\${users.length} user(s) in the database\`}
-                </p>
-                <ul className="mt-4 list-disc pl-5">
-                    {users.map((user) => (
-                        <li key={user.id}>
-                            {user.name} - {user.email}
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </main>
-    );
-}
-`;
-  return tpl;
-}
-
 // src/genNextPackageJson.ts
 function genNextPackageJson(o) {
   const deps = [
@@ -3586,6 +3539,51 @@ function genNextPackageJson(o) {
     "devDependencies": {
         ${dev.join(",\n        ")}
     }
+}
+`;
+  return tpl;
+}
+
+// src/genNextPageTsx.ts
+function genNextPageTsx(o) {
+  const card = o.daisyui ? `<main className="card mx-auto mt-8 max-w-lg bg-base-100 shadow">
+            <div className="card-body">` : `<main className="mx-auto mt-8 max-w-lg rounded border border-slate-300 p-4">
+            <div>`;
+  const heading = o.daisyui ? `<h1 className="card-title">Hello World from ${o.name} app!</h1>` : `<h1 className="text-2xl font-bold">Hello World from ${o.name} app!</h1>`;
+  const tpl = `
+import { db } from "@/db";
+import { usersTable } from "@/db/schema";
+
+//not cached: the point of this page is to show what is in the database now
+export const dynamic = "force-dynamic";
+
+async function readUsers() {
+    try {
+        return { users: await db.select().from(usersTable), error: null };
+    } catch {
+        return { users: [], error: 'run "npm run db:push" to create the table' };
+    }
+}
+
+export default async function Home() {
+    const { users, error } = await readUsers();
+
+    return (
+        ${card}
+                ${heading}
+                <p className="mt-2 text-sm text-slate-500">
+                    {error ?? \`\${users.length} user(s) in the database\`}
+                </p>
+                <ul className="mt-4 list-disc pl-5">
+                    {users.map((user) => (
+                        <li key={user.id}>
+                            {user.name} - {user.email}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </main>
+    );
 }
 `;
   return tpl;
@@ -3666,12 +3664,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
 function nextDrizzle(o) {
   const files = {
     ...apiFiles(o),
+    ...huskyFiles(o),
     "package.json": genRootPackageJson(o),
     "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
     ".gitignore": genGitIgnore(o),
     ".editorconfig": genEditorConfig(),
-    ".oxlintrc.json": genOxlintrc(),
-    ".oxfmtrc.json": genOxfmtrc(),
+    ".oxlintrc.json": genOxlintrc(o),
+    ".oxfmtrc.json": genOxfmtrc(o),
     "apps/web/package.json": genNextPackageJson(o),
     "apps/web/tsconfig.json": genNextTsConfig(),
     "apps/web/next.config.ts": genNextConfig(),
@@ -3753,9 +3752,7 @@ function hash(name) {
   return h >>> 0;
 }
 function hue(seed) {
-  return Math.floor(
-    (Math.imul(seed, 2654435761) >>> 0) / 4294967296 * 360
-  );
+  return Math.floor((Math.imul(seed, 2654435761) >>> 0) / 4294967296 * 360);
 }
 function bitAt(seed, i) {
   const x = Math.imul(seed ^ Math.imul(i + 1, 2654435769), 2246822507);
@@ -3869,23 +3866,22 @@ function genSwTs() {
 //declares "self" as, to the service worker flavour that has skipWaiting()
 declare const self: ServiceWorkerGlobalScope;
 
-const VERSION = 'v1';
-const SHELL = 'shell-' + VERSION;
+const VERSION = "v1";
+const SHELL = "shell-" + VERSION;
 
 //cache.addAll is all-or-nothing: one 404 here fails the install and the
 //worker never activates, silently. Keep this in step with the build output.
 const ASSETS = [
-    '/',
-    '/index.html',
-    '/app.js',
-    '/app.css',
-    '/icon.svg',
-    '/icon-192.png',
-    '/manifest.webmanifest',
+    "/",
+    "/index.html",
+    "/app.js",
+    "/app.css",
+    "/icon.svg",
+    "/icon-192.png",
+    "/manifest.webmanifest",
 ];
 
-function fetchAndCache(req: Request)
-{
+function fetchAndCache(req: Request) {
     return fetch(req).then((res) => {
         //the body can only be read once, so cache a copy and return the original
         const copy = res.clone();
@@ -3894,39 +3890,41 @@ function fetchAndCache(req: Request)
     });
 }
 
-self.addEventListener('install', (e) => {
+self.addEventListener("install", (e) => {
     e.waitUntil(
         caches
             .open(SHELL)
             .then((cache) => cache.addAll(ASSETS))
-            .then(() => self.skipWaiting())
+            .then(() => self.skipWaiting()),
     );
 });
 
-self.addEventListener('activate', (e) => {
+self.addEventListener("activate", (e) => {
     e.waitUntil(
         caches
             .keys()
-            .then((keys) => Promise.all(keys.filter((k) => k !== SHELL).map((k) => caches.delete(k))))
-            .then(() => self.clients.claim())
+            .then((keys) =>
+                Promise.all(keys.filter((k) => k !== SHELL).map((k) => caches.delete(k))),
+            )
+            .then(() => self.clients.claim()),
     );
 });
 
-self.addEventListener('fetch', (e) => {
+self.addEventListener("fetch", (e) => {
     const req = e.request;
 
     //POSTs and cross-origin requests fall through to the network untouched
-    if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) {
+    if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) {
         return;
     }
 
     //navigations go to the network first so a deploy is picked up on reload,
     //and fall back to the cached shell when offline
-    if (req.mode === 'navigate') {
+    if (req.mode === "navigate") {
         e.respondWith(
             fetch(req).catch(() =>
-                caches.match('/index.html').then((hit) => hit ?? Response.error())
-            )
+                caches.match("/index.html").then((hit) => hit ?? Response.error()),
+            ),
         );
         return;
     }
@@ -4026,15 +4024,15 @@ function genAppCss(o) {
 // src/genAppTsx.ts
 var REGISTER = `
 
-if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ("serviceWorker" in navigator && !["localhost", "127.0.0.1"].includes(location.hostname)) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
     });
 }`;
 function body2(o) {
   if (o.daisyui) {
     return `    return (
-        <main className="card mx-auto mt-8 max-w-lg bg-base-100 shadow">
+        <main className="card bg-base-100 mx-auto mt-8 max-w-lg shadow">
             <div className="card-body">
                 <h1 className="card-title">Hello World from ${o.name} app!</h1>
                 <button className="btn btn-primary">daisyUI button</button>
@@ -4049,7 +4047,7 @@ function body2(o) {
         </main>
     );`;
   }
-  return `    return <h1>Hello World from ${o.name} app!</h1>`;
+  return `    return <h1>Hello World from ${o.name} app!</h1>;`;
 }
 function example2(o) {
   const first = o.api && queries(o.api)[0];
@@ -4057,13 +4055,11 @@ function example2(o) {
     return "";
   }
   const name = first.name;
-  const args = hasParams(first) ? `{ /* ${name[0].toUpperCase()}${name.slice(
-    1
-  )}Params, see ./api/types */ }` : "";
+  const args = hasParams(first) ? `{ /* ${name[0].toUpperCase()}${name.slice(1)}Params, see ./api/types */ }` : "";
   return `//Your API is wired up. To read from it:
 //
-//    import { useQuery } from '@tanstack/react-query';
-//    import { ${name}Query } from './api';
+//    import { useQuery } from "@tanstack/react-query";
+//    import { ${name}Query } from "./api";
 //
 //    const { data, isPending, error } = useQuery(${name}Query(${args}));
 `;
@@ -4071,7 +4067,7 @@ function example2(o) {
 function genAppTsx(o) {
   const register = o.template === "pwa" ? REGISTER : "";
   const provider = o.api ? {
-    imports: `import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+    imports: `import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 `,
     client: `
 const queryClient = new QueryClient();
@@ -4079,21 +4075,22 @@ const queryClient = new QueryClient();
     open: `
     <QueryClientProvider client={queryClient}>
         `,
+    //the trailing comma is oxfmt's trailingComma: "all" default,
+    //applied to root.render's only argument now that it spans lines
     close: `
-    </QueryClientProvider>
+    </QueryClientProvider>,
 `
   } : { imports: "", client: "", open: "", close: "" };
   const tpl = `
-${provider.imports}import { createRoot } from 'react-dom/client';
+${provider.imports}import { createRoot } from "react-dom/client";
 
-import './app.css';
+import "./app.css";
 ${provider.client}
-${example2(o)}function App()
-{
+${example2(o)}function App() {
 ${body2(o)}
 }
 
-const container = document.getElementById('app')!;
+const container = document.getElementById("app")!;
 const root = createRoot(container);
 root.render(${provider.open}<App />${provider.close});${register}
 `;
@@ -4215,11 +4212,13 @@ function genPkgJson(o) {
 function react(o) {
   const files = {
     ...apiFiles(o),
+    ...huskyFiles(o),
     "package.json": genRootPackageJson(o),
     "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
     ".gitignore": genGitIgnore(o),
     ".editorconfig": genEditorConfig(),
-    ".prettierrc.json": genPrettierConfig(),
+    ".oxlintrc.json": genOxlintrc(o),
+    ".oxfmtrc.json": genOxfmtrc(o),
     "apps/web/package.json": genPkgJson(o),
     "apps/web/tsconfig.json": genTsConfig(o),
     "apps/web/public/index.html": genIndexHtml(o),
@@ -4255,12 +4254,13 @@ function pwa(o) {
 function viteSpa(o) {
   return {
     ...apiFiles(o),
+    ...huskyFiles(o),
     "package.json": genRootPackageJson(o),
     "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
     ".gitignore": genGitIgnore(o),
     ".editorconfig": genEditorConfig(),
-    ".oxlintrc.json": genOxlintrc(),
-    ".oxfmtrc.json": genOxfmtrc(),
+    ".oxlintrc.json": genOxlintrc(o),
+    ".oxfmtrc.json": genOxfmtrc(o),
     "apps/web/package.json": genVitePackageJson(o),
     "apps/web/tsconfig.json": genViteTsConfig(),
     "apps/web/vite.config.ts": genViteConfig(o),
@@ -4288,10 +4288,7 @@ function writeTree(dir, files) {
   for (const [rel, contents] of Object.entries(files)) {
     const target = path3.join(dir, rel);
     fs3.mkdirSync(path3.dirname(target), { recursive: true });
-    fs3.writeFileSync(
-      target,
-      Buffer.isBuffer(contents) ? contents : contents.trim() + "\n"
-    );
+    fs3.writeFileSync(target, Buffer.isBuffer(contents) ? contents : contents.trim() + "\n");
   }
 }
 function readSamples(file) {
@@ -4313,9 +4310,7 @@ async function create(dir, opts, args) {
   const extra = {};
   if (args) {
     opts.api = await loadSpec(args.dir, void 0, args, API_DIR);
-    for (const [rel, contents] of Object.entries(
-      collectionFiles(args.dir)
-    )) {
+    for (const [rel, contents] of Object.entries(collectionFiles(args.dir))) {
       extra[`${API_DIR}/${rel}`] = contents;
     }
   }
@@ -4330,9 +4325,7 @@ async function regenerate(parsed) {
       'No "tsreact" entry in package.json - this is not an app scaffolded with --api'
     );
   }
-  const pkg = JSON.parse(
-    fs3.readFileSync(path3.join(parsed.dir, "package.json"), "utf8")
-  );
+  const pkg = JSON.parse(fs3.readFileSync(path3.join(parsed.dir, "package.json"), "utf8"));
   const spec = await loadSpec(
     path3.join(parsed.dir, recorded),
     path3.join(parsed.dir, SAMPLES),
@@ -4345,6 +4338,7 @@ async function regenerate(parsed) {
     template: template ?? "react",
     tailwind: false,
     daisyui: false,
+    husky: false,
     api: spec
   };
   const root = template ? apiRoot(opts) : LEGACY_API_ROOT;
@@ -4355,11 +4349,9 @@ async function regenerate(parsed) {
   }
   writeTree(parsed.dir, files);
   console.log(
-    source_default.greenBright(
-      `
+    source_default.greenBright(`
 Regenerated ${Object.keys(files).length} file(s) from ${recorded}/
-`
-    )
+`)
   );
 }
 async function main() {

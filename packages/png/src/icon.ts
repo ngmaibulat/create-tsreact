@@ -23,9 +23,7 @@ function hash(name: string) {
 //FNV's low bits are its weakest, and "seed % 360" uses nothing else - which
 //clusters most names into the reds. Mix first, then take the high bits.
 function hue(seed: number) {
-    return Math.floor(
-        ((Math.imul(seed, 2654435761) >>> 0) / 0x100000000) * 360
-    );
+    return Math.floor(((Math.imul(seed, 2654435761) >>> 0) / 0x100000000) * 360);
 }
 
 //one well-mixed bit per grid cell, so neighbouring indexes are uncorrelated
@@ -44,14 +42,14 @@ function hsl(h: number, s: number, l: number): [number, number, number] {
         h < 60
             ? [c, x, 0]
             : h < 120
-            ? [x, c, 0]
-            : h < 180
-            ? [0, c, x]
-            : h < 240
-            ? [0, x, c]
-            : h < 300
-            ? [x, 0, c]
-            : [c, 0, x];
+              ? [x, c, 0]
+              : h < 180
+                ? [0, c, x]
+                : h < 240
+                  ? [0, x, c]
+                  : h < 300
+                    ? [x, 0, c]
+                    : [c, 0, x];
 
     return [
         Math.round((rgb[0] + m) * 255),
@@ -122,12 +120,7 @@ export default function icon(name: string, size: number, maskable = false) {
             const col = Math.floor((x - inset) / cell);
             const row = Math.floor((y - inset) / cell);
 
-            const on =
-                col >= 0 &&
-                col < GRID &&
-                row >= 0 &&
-                row < GRID &&
-                cells[row * GRID + col];
+            const on = col >= 0 && col < GRID && row >= 0 && row < GRID && cells[row * GRID + col];
 
             const [r, g, b] = on ? fg : bg;
 

@@ -41,10 +41,7 @@ export type Entry = {
 //else is a dict, or a list when it opens with [ instead of {.
 function isTextBlock(name: string) {
     return (
-        name.startsWith("body") ||
-        name.startsWith("script") ||
-        name === "tests" ||
-        name === "docs"
+        name.startsWith("body") || name.startsWith("script") || name === "tests" || name === "docs"
     );
 }
 
@@ -55,7 +52,7 @@ function isNameChar(ch: string) {
 
 //returns the index just past the closing delimiter, having started one
 //character past the opening one
-function findEnd(src: string, from: number, open: string, text: boolean) {
+function findEnd(src: string, from: number, open: string, isText: boolean) {
     const close = open === "{" ? "}" : "]";
     let depth = 1;
     let i = from;
@@ -63,13 +60,13 @@ function findEnd(src: string, from: number, open: string, text: boolean) {
     while (i < src.length) {
         const ch = src[i];
 
-        if (text && src.startsWith("'''", i)) {
+        if (isText && src.startsWith("'''", i)) {
             const end = src.indexOf("'''", i + 3);
             i = end === -1 ? src.length : end + 3;
             continue;
         }
 
-        if (text && ch === '"') {
+        if (isText && ch === '"') {
             i++;
             while (i < src.length && src[i] !== '"') {
                 i += src[i] === "\\" ? 2 : 1;
@@ -125,21 +122,17 @@ export function parseBru(src: string, file: string): Map<string, Block> {
 
         const open = src[i];
         if (!name || (open !== "{" && open !== "[")) {
-            throw new CliError(
-                `Could not parse ${file}: expected a block at character ${start}`
-            );
+            throw new CliError(`Could not parse ${file}: expected a block at character ${start}`);
         }
 
-        const text = open === "{" && isTextBlock(name);
-        const end = findEnd(src, i + 1, open, text);
+        const isText = open === "{" && isTextBlock(name);
+        const end = findEnd(src, i + 1, open, isText);
 
         if (end === -1) {
-            throw new CliError(
-                `Could not parse ${file}: block "${name}" is never closed`
-            );
+            throw new CliError(`Could not parse ${file}: block "${name}" is never closed`);
         }
 
-        const kind: BlockKind = open === "[" ? "list" : text ? "text" : "dict";
+        const kind: BlockKind = open === "[" ? "list" : isText ? "text" : "dict";
 
         blocks.set(name, { name, kind, content: src.slice(i + 1, end) });
         i = end + 1;
@@ -221,10 +214,7 @@ export function list(block: Block | undefined): string[] {
 export function dedent(lines: string[]) {
     const width = lines
         .filter((l) => l.trim())
-        .reduce(
-            (min, l) => Math.min(min, l.length - l.trimStart().length),
-            Infinity
-        );
+        .reduce((min, l) => Math.min(min, l.length - l.trimStart().length), Infinity);
 
     if (!Number.isFinite(width) || width === 0) {
         return lines;

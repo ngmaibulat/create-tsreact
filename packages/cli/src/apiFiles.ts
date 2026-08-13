@@ -1,5 +1,3 @@
-import { appDir } from "./cli.js";
-import type { Files, Opts } from "./cli.js";
 import { mutations, queries } from "@tsreact/bruno/emit";
 import {
     clientTs,
@@ -11,6 +9,9 @@ import {
     typesTs,
 } from "@tsreact/bruno/generate";
 import { serialise } from "@tsreact/bruno/sample";
+
+import { appDir } from "./cli.js";
+import type { Files, Opts } from "./cli.js";
 
 //A map-builder, not a generator: it returns a slice of the file tree the way
 //a preset does, and each preset spreads it in. Putting it here rather than in

@@ -66,9 +66,7 @@ if (!BUMPS.includes(bump)) {
 const branch = capture("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
 
 if (branch !== BRANCH && !anyBranch) {
-    die(
-        `on branch "${branch}", expected "${BRANCH}" - pass --any-branch to override`
-    );
+    die(`on branch "${branch}", expected "${BRANCH}" - pass --any-branch to override`);
 }
 
 // the check npm was supposed to do. Nothing has been modified yet, so failing
@@ -103,7 +101,7 @@ try {
 } catch {
     die(
         `publish failed. ${tag} is already committed and tagged, so retry with` +
-            ` "pnpm --filter create-tsreact publish" - re-running release would bump again`
+            ` "pnpm --filter create-tsreact publish" - re-running release would bump again`,
     );
 }
 

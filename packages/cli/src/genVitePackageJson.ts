@@ -34,9 +34,7 @@ export default function genVitePackageJson(o: Opts) {
         dev.push(`"daisyui": "^5.7.0"`);
     }
 
-    const description = workspace
-        ? "Web client"
-        : "Typescript/React SPA on Vite";
+    const description = workspace ? "Web client" : "Typescript/React SPA on Vite";
 
     //"build" typechecks first on purpose: vite transpiles with oxc and never
     //type-checks, so without this the only thing standing between a type

@@ -4,9 +4,9 @@
 //opened in Expo Go or in a native build.
 export default function genExpoIndexTs() {
     const tpl = `
-import { registerRootComponent } from 'expo';
+import { registerRootComponent } from "expo";
 
-import App from './App';
+import App from "./App";
 
 registerRootComponent(App);
 `;

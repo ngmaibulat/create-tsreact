@@ -8,13 +8,16 @@ file, no plugin system, no abstraction to learn before you can change how your
 code is compiled.
 
 The **oxc lane** — `vite-spa`, `next-drizzle`, `fastify-react` — is for when
-you want the ecosystem rather than the minimalism: Vite 8, Next 16, Tailwind 4
-on by default, and oxlint + oxfmt instead of ESLint + Prettier. This is not an
-attempt to out-do `create-vite`; it is Vite as one target among several, so
-that one command scaffolds whichever of these you need next.
+you want the ecosystem rather than the minimalism: Vite 8 (rolldown under it),
+Next 16 and Tailwind 4 on by default. This is not an attempt to out-do
+`create-vite`; it is Vite as one target among several, so that one command
+scaffolds whichever of these you need next.
 
-Both lanes generate TypeScript 7 and React 19, and both compose with
-`--api`.
+Both lanes generate TypeScript 7 and React 19, both compose with `--api`, and
+**every** template — `expo` included — lints and formats with `oxlint` and
+`oxfmt`. No ESLint, no Prettier anywhere. A freshly scaffolded app passes its
+own `lint` and `format:check` on the first run; the smoke suite asserts it for
+every template.
 
 ### Use
 
@@ -67,11 +70,18 @@ The last three templates have Tailwind 4 already — their bundler compiles it,
 so there is no separate CSS watcher. `--tailwind` is accepted there as a no-op,
 and `--daisyui` still adds the plugin on top.
 
-And one adds a typed backend client to any template:
+And two more work with any template:
 
 | Flag          | What it does                                                 |
 | ------------- | ------------------------------------------------------------ |
 | `--api <dir>` | Generates a typed client from a Bruno collection — see below |
+| `--husky`     | Adds a pre-commit hook: format staged files, then lint       |
+
+`--husky` writes `.husky/pre-commit` and `.lintstagedrc.json`, and adds a
+`prepare` script. Husky installs the hook from that script, so **run `git init`
+before installing** — outside a repository husky exits quietly and you get a
+hook file that never runs. If you have already installed, `pnpm run prepare`
+fixes it.
 
 ```sh
 pnpm create tsreact myapp
@@ -268,7 +278,8 @@ Differences from the `react` template beyond the bundler:
 - `pnpm build` runs `tsc --noEmit` first. Vite transpiles with oxc and never
   type-checks, so without that the only thing between a type error and
   production is your editor.
-- Linting and formatting are `oxlint` and `oxfmt`. No ESLint, no Prettier.
+- Linting and formatting are `oxlint` and `oxfmt` — as they are in every
+  template now, not just this lane.
 
 ### The next-drizzle template
 
@@ -433,16 +444,18 @@ This scaffolder should be:
 - easy to review/understand created files
 - fast to compile/bundle, because esbuild is
 
-Generated projects depend on `react`, `react-dom`, `esbuild`, `typescript`,
-`prettier` and the matching `@types` packages. `typescript` is the largest of
-them; it is there because a `tsconfig.json` with no compiler to run it is not
-much of a TypeScript setup — `pnpm typecheck` runs `tsc --noEmit`.
+Generated projects depend on `react`, `react-dom`, `esbuild`, `typescript` and
+the matching `@types` packages, plus `oxlint` and `oxfmt` at the workspace root.
+`typescript` is the largest of them; it is there because a `tsconfig.json` with
+no compiler to run it is not much of a TypeScript setup — `pnpm typecheck` runs
+`tsc --noEmit`.
 
-For Visual Studio Code, the Prettier extension is recommended:
-https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode
+For Visual Studio Code, the oxc extension covers both:
+https://marketplace.visualstudio.com/items?itemName=oxc.oxc-vscode
 
-You can also use prettier from the CLI:
+From the CLI:
 
+- `pnpm lint`
 - `pnpm format:check`
 - `pnpm format:fix`
 

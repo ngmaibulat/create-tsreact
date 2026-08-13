@@ -5,24 +5,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "format:check": "prettier packages/*/src --check",
-    "format:fix": "prettier packages/*/src --write",
-    "lint": "eslint packages/*/src",
+    "format:check": "oxfmt --check packages/bruno/src packages/cli/src packages/png/src packages/pm/src scripts packages/cli/smoke.mjs",
+    "format:fix": "oxfmt packages/bruno/src packages/cli/src packages/png/src packages/pm/src scripts packages/cli/smoke.mjs",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit -p packages/bruno && tsc --noEmit -p packages/pm && tsc --noEmit -p packages/png && tsc --noEmit -p packages/cli",
     "build": "pnpm --filter create-tsreact run build",
     "build-watch": "pnpm --filter create-tsreact run build-watch",
     "test": "pnpm --filter create-tsreact run test",
     "release": "node scripts/release.mjs",
-    "prepare": "husky install"
+    "prepare": "husky"
   },
   "license": "MIT",
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^5.42.0",
-    "@typescript-eslint/parser": "^5.42.0",
-    "eslint": "^8.27.0",
-    "husky": "^8.0.1",
-    "lint-staged": "^13.0.3",
-    "prettier": "^2.7.1",
-    "typescript": "^5.9.3"
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.70.0",
+    "typescript": "^7.0.2"
   }
 }

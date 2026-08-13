@@ -19,11 +19,7 @@ const NOT_REQUESTS = new Set(["collection.bru", "folder.bru"]);
 //all=true keeps folder.bru and collection.bru, which carry settings rather
 //than requests - readCollection has no use for them, but the copy made into
 //the scaffolded app has to be faithful
-function walk(
-    dir: string,
-    base = "",
-    all = false
-): { file: string; folder: string }[] {
+function walk(dir: string, base = "", all = false): { file: string; folder: string }[] {
     const out: { file: string; folder: string }[] = [];
 
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -34,16 +30,11 @@ function walk(
         const full = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
-            out.push(
-                ...walk(full, base ? `${base}/${entry.name}` : entry.name, all)
-            );
+            out.push(...walk(full, base ? `${base}/${entry.name}` : entry.name, all));
             continue;
         }
 
-        if (
-            entry.name.endsWith(".bru") &&
-            (all || !NOT_REQUESTS.has(entry.name))
-        ) {
+        if (entry.name.endsWith(".bru") && (all || !NOT_REQUESTS.has(entry.name))) {
             out.push({ file: full, folder: base });
         }
     }
@@ -62,9 +53,7 @@ export function slug(name: string) {
 
     const joined = words
         .map((w, i) =>
-            i === 0
-                ? w[0].toLowerCase() + w.slice(1)
-                : w[0].toUpperCase() + w.slice(1)
+            i === 0 ? w[0].toLowerCase() + w.slice(1) : w[0].toUpperCase() + w.slice(1),
         )
         .join("");
 
@@ -198,7 +187,7 @@ function readEnvironment(dir: string, wanted: string | undefined) {
     if (!fs.existsSync(envDir)) {
         if (wanted) {
             throw new CliError(
-                `No environments/ directory in ${dir}, so --api-env ${wanted} cannot be resolved`
+                `No environments/ directory in ${dir}, so --api-env ${wanted} cannot be resolved`,
             );
         }
         return { vars: {}, secrets: [] as string[] };
@@ -219,22 +208,18 @@ function readEnvironment(dir: string, wanted: string | undefined) {
     //generated client at staging half the time
     if (!wanted && files.length > 1) {
         throw new CliError(
-            `${dir} has several environments - pick one with --api-env: ${names.join(
-                ", "
-            )}`
+            `${dir} has several environments - pick one with --api-env: ${names.join(", ")}`,
         );
     }
 
     const chosen = wanted ?? names[0];
     if (!names.includes(chosen)) {
-        throw new CliError(
-            `Unknown environment "${chosen}". Available: ${names.join(", ")}`
-        );
+        throw new CliError(`Unknown environment "${chosen}". Available: ${names.join(", ")}`);
     }
 
     const blocks = parseBru(
         fs.readFileSync(path.join(envDir, `${chosen}.bru`), "utf8"),
-        path.join(envDir, `${chosen}.bru`)
+        path.join(envDir, `${chosen}.bru`),
     );
 
     return {
@@ -282,7 +267,7 @@ export function collectionFiles(dir: string) {
 
 export function readCollection(
     dir: string,
-    env: string | undefined
+    env: string | undefined,
 ): Omit<ApiSpec, "dir" | "samples"> {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
         throw new CliError(`Not a Bruno collection directory: ${dir}`);
@@ -296,9 +281,7 @@ export function readCollection(
             const parsed = JSON.parse(fs.readFileSync(brunoJson, "utf8"));
             collection = parsed.name || collection;
         } catch (err) {
-            throw new CliError(
-                `${brunoJson} is not valid json: ${(err as Error).message}`
-            );
+            throw new CliError(`${brunoJson} is not valid json: ${(err as Error).message}`);
         }
     }
 
@@ -318,10 +301,7 @@ export function readCollection(
     //stable output regardless of readdir order, so regenerating produces no
     //spurious diff
     endpoints.sort(
-        (a, b) =>
-            a.folder.localeCompare(b.folder) ||
-            a.seq - b.seq ||
-            a.name.localeCompare(b.name)
+        (a, b) => a.folder.localeCompare(b.folder) || a.seq - b.seq || a.name.localeCompare(b.name),
     );
 
     dedupe(endpoints);

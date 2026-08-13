@@ -68,11 +68,21 @@ export function scope(o: Opts) {
 //bundler plugin compiles it, so there is no separate CLI step to opt into.
 //parseArgs forces o.tailwind true for them, which keeps every generator that
 //already branches on that flag working without a per-template special case.
-const TAILWIND_ALWAYS: readonly Template[] = [
-    "vite-spa",
-    "next-drizzle",
-    "fastify-react",
-];
+const TAILWIND_ALWAYS: readonly Template[] = ["vite-spa", "next-drizzle", "fastify-react"];
+
+//True when @tailwindcss/cli runs as its own watcher rather than inside the
+//bundler - which is what decides whether there is a "tw" script to advertise,
+//a "predev" hook to enable, and @source paths to name in styles.css.
+//
+//This is the complement of TAILWIND_ALWAYS, and deriving it rather than
+//repeating "react || pwa || extension" in four places is the point: those
+//copies used to drift, and one of them was a stale `!oxc` that meant "not a
+//template with oxlint" back when only three templates had it. Expo cannot
+//reach the true branch - parseArgs rejects --tailwind there outright, because
+//React Native has no CSS for the tailwind CLI to compile.
+export function standaloneTailwind(o: Opts) {
+    return o.tailwind && !TAILWIND_ALWAYS.includes(o.template);
+}
 
 //what a preset returns: relative path -> contents. Almost everything is a
 //string; a Buffer is the escape hatch for the pwa's png icons, which cannot
@@ -86,6 +96,11 @@ export type Opts = {
     template: Template;
     tailwind: boolean;
     daisyui: boolean;
+    //--husky: a pre-commit hook that formats staged files and lints. Opt-in
+    //rather than default, because a scaffolder installing git hooks nobody
+    //asked for is a surprise, and the scaffolded directory is usually not a
+    //git repository yet.
+    husky: boolean;
     //the parsed and sampled Bruno collection, absent unless --api was given.
     //Hanging it here rather than passing it alongside Opts is what lets every
     //genApi* module keep the one-argument signature the other generators use.
@@ -147,17 +162,13 @@ export function validateName(name: string) {
         throw new CliError(`App name must not contain "..": ${name}`);
     }
     if (/[/\\]/.test(name)) {
-        throw new CliError(
-            `App name must not contain a path separator: ${name}`
-        );
+        throw new CliError(`App name must not contain a path separator: ${name}`);
     }
     if (/^[._]/.test(name)) {
         throw new CliError(`App name must not start with "." or "_": ${name}`);
     }
     if (/["\\\p{Cc}]/u.test(name)) {
-        throw new CliError(
-            `App name contains an unsupported character: ${name}`
-        );
+        throw new CliError(`App name contains an unsupported character: ${name}`);
     }
     return name;
 }
@@ -218,28 +229,24 @@ function marker(dir: string, key: string) {
     }
 }
 
-function parseTemplate(value: string | undefined): Template {
-    if (!value) {
-        throw new CliError(
-            "--template needs a value: " + TEMPLATES.join(" | ")
-        );
+//the parameter is "raw" rather than "value" in both of these: value() below is
+//a module-level function, and naming the parameter after it would shadow it
+function parseTemplate(raw: string | undefined): Template {
+    if (!raw) {
+        throw new CliError("--template needs a value: " + TEMPLATES.join(" | "));
     }
-    if (!(TEMPLATES as readonly string[]).includes(value)) {
-        throw new CliError(
-            `Unknown template "${value}". Expected: ${TEMPLATES.join(" | ")}`
-        );
+    if (!(TEMPLATES as readonly string[]).includes(raw)) {
+        throw new CliError(`Unknown template "${raw}". Expected: ${TEMPLATES.join(" | ")}`);
     }
-    return value as Template;
+    return raw as Template;
 }
 
-function parseMode(value: string | undefined): SampleMode {
-    if (!value || !(SAMPLE_MODES as readonly string[]).includes(value)) {
-        throw new CliError(
-            `--api-sample expects one of: ${SAMPLE_MODES.join(" | ")}`
-        );
+function parseMode(raw: string | undefined): SampleMode {
+    if (!raw || !(SAMPLE_MODES as readonly string[]).includes(raw)) {
+        throw new CliError(`--api-sample expects one of: ${SAMPLE_MODES.join(" | ")}`);
     }
 
-    return value as SampleMode;
+    return raw as SampleMode;
 }
 
 //a flag that takes a value, in either "--flag value" or "--flag=value" form.
@@ -262,6 +269,7 @@ export function parseArgs(argv: string[]): Parsed {
     let template: Template = "react";
     let tailwind = false;
     let daisyui = false;
+    let husky = false;
     let target = "";
     let api = "";
     let env: string | undefined;
@@ -303,6 +311,10 @@ export function parseArgs(argv: string[]): Parsed {
         }
         if (arg === "--daisyui") {
             daisyui = true;
+            continue;
+        }
+        if (arg === "--husky") {
+            husky = true;
             continue;
         }
         if (arg === "--api" || arg.startsWith("--api=")) {
@@ -375,7 +387,7 @@ export function parseArgs(argv: string[]): Parsed {
     //tailwind CLI to compile. that is nativewind, a different project.
     if (tailwind && template === "expo") {
         throw new CliError(
-            "--tailwind is not supported by the expo template: React Native has no CSS"
+            "--tailwind is not supported by the expo template: React Native has no CSS",
         );
     }
 
@@ -400,7 +412,7 @@ export function parseArgs(argv: string[]): Parsed {
     return {
         kind: "create",
         dir,
-        opts: { name, template, tailwind, daisyui },
+        opts: { name, template, tailwind, daisyui, husky },
         //resolved against the cwd, not the target: --api points at a
         //collection that already exists, while the target must be empty
         api: api ? { dir: path.resolve(api), env, mode, refresh } : undefined,

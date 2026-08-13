@@ -1,13 +1,6 @@
 import { CliError } from "./error.js";
 import { SAFE, SAMPLES_VERSION, substitute, unresolved } from "./spec.js";
-import type {
-    ApiSpec,
-    Endpoint,
-    Sample,
-    SampleMode,
-    Samples,
-    SamplesFile,
-} from "./spec.js";
+import type { ApiSpec, Endpoint, Sample, SampleMode, Samples, SamplesFile } from "./spec.js";
 
 //Executes the collection once so the generated types describe what the API
 //really returns rather than what someone declared it returns.
@@ -91,7 +84,7 @@ function buildUrl(e: Endpoint, vars: Record<string, string>) {
             error: `unresolved variable${
                 missing.length > 1 ? "s" : ""
             } ${missing.map((m) => `{{${m}}}`).join(", ")} - set ${missing.join(
-                ", "
+                ", ",
             )} in the environment`,
         };
     }
@@ -125,7 +118,7 @@ function buildHeaders(e: Endpoint, vars: Record<string, string>) {
 async function request(
     fetchFn: FetchFn,
     e: Endpoint,
-    vars: Record<string, string>
+    vars: Record<string, string>,
 ): Promise<Sample> {
     const built = buildUrl(e, vars);
     if (built.error) {
@@ -162,9 +155,7 @@ async function request(
             return { status: res.status, body: JSON.parse(text) };
         } catch {
             return {
-                skipped: `response is not json${
-                    type ? ` (content-type: ${type})` : ""
-                }`,
+                skipped: `response is not json${type ? ` (content-type: ${type})` : ""}`,
             };
         }
     } catch (err) {
@@ -184,14 +175,11 @@ async function request(
 async function pool<T>(items: T[], run: (item: T) => Promise<void>) {
     let next = 0;
 
-    const workers = Array.from(
-        { length: Math.min(CONCURRENCY, items.length) },
-        async () => {
-            while (next < items.length) {
-                await run(items[next++]);
-            }
+    const workers = Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
+        while (next < items.length) {
+            await run(items[next++]);
         }
-    );
+    });
 
     await Promise.all(workers);
 }
@@ -206,7 +194,7 @@ export type CollectOpts = {
 
 export async function collect(
     spec: Pick<ApiSpec, "vars" | "endpoints">,
-    opts: CollectOpts
+    opts: CollectOpts,
 ): Promise<Samples> {
     const samples: Samples = {};
     const todo: Endpoint[] = [];
@@ -243,7 +231,7 @@ export async function collect(
     const fetchFn = (globalThis as { fetch?: FetchFn }).fetch;
     if (!fetchFn) {
         throw new CliError(
-            "Sampling needs global fetch (Node 18+). Re-run with --api-sample=none."
+            "Sampling needs global fetch (Node 18+). Re-run with --api-sample=none.",
         );
     }
 
@@ -263,7 +251,7 @@ export async function collect(
         throw new CliError(
             `Could not sample any endpoint (${todo.length} tried).\n` +
                 `First failure - ${failures[0].name}: ${first.skipped}\n` +
-                `Re-run with --api-sample=none to generate without sampling.`
+                `Re-run with --api-sample=none to generate without sampling.`,
         );
     }
 
@@ -295,16 +283,14 @@ export function deserialise(text: string, file: string): Samples {
     try {
         parsed = JSON.parse(text);
     } catch (err) {
-        throw new CliError(
-            `${file} is not valid json: ${(err as Error).message}`
-        );
+        throw new CliError(`${file} is not valid json: ${(err as Error).message}`);
     }
 
     if (parsed.version !== SAMPLES_VERSION) {
         throw new CliError(
             `${file} was written by a different version of create-tsreact ` +
                 `(found ${parsed.version}, expected ${SAMPLES_VERSION}). ` +
-                `Delete it and re-run with --refresh.`
+                `Delete it and re-run with --refresh.`,
         );
     }
 

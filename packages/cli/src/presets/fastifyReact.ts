@@ -1,5 +1,5 @@
-import type { Files, Opts } from "../cli.js";
 import apiFiles from "../apiFiles.js";
+import type { Files, Opts } from "../cli.js";
 import genEditorConfig from "../genEditorConfig.js";
 import genEnvDts from "../genEnvDts.js";
 import genFastifyPkgJson from "../genFastifyPackageJson.js";
@@ -18,6 +18,7 @@ import genViteConfig from "../genViteConfig.js";
 import genViteIndexHtml from "../genViteIndexHtml.js";
 import genVitePkgJson from "../genVitePackageJson.js";
 import genViteTsConfig from "../genViteTsConfig.js";
+import huskyFiles from "../huskyFiles.js";
 
 //The only template with two apps. Since every template is a workspace now,
 //the difference is just the second entry under apps/ and the extra root
@@ -29,12 +30,13 @@ import genViteTsConfig from "../genViteTsConfig.js";
 export default function fastifyReact(o: Opts): Files {
     return {
         ...apiFiles(o),
+        ...huskyFiles(o),
         "package.json": genRootPkgJson(o),
         "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
         ".gitignore": genGitIgnore(o),
         ".editorconfig": genEditorConfig(),
-        ".oxlintrc.json": genOxlintrc(),
-        ".oxfmtrc.json": genOxfmtrc(),
+        ".oxlintrc.json": genOxlintrc(o),
+        ".oxfmtrc.json": genOxfmtrc(o),
 
         "apps/server/package.json": genFastifyPkgJson(o),
         "apps/server/tsconfig.json": genServerTsConfig(),

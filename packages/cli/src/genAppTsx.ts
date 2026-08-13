@@ -1,5 +1,6 @@
-import type { Opts } from "./cli.js";
 import { hasParams, queries } from "@tsreact/bruno/emit";
+
+import type { Opts } from "./cli.js";
 
 //The service worker is cache-first, so registering it on localhost would let
 //it serve a stale app.js and fight esbuild's live reload - and it would sit
@@ -7,9 +8,9 @@ import { hasParams, queries } from "@tsreact/bruno/emit";
 //off localhost: build and serve public/ over https to exercise it.
 const REGISTER = `
 
-if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ("serviceWorker" in navigator && !["localhost", "127.0.0.1"].includes(location.hostname)) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
     });
 }`;
 
@@ -17,8 +18,11 @@ if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(locatio
 //greeting has to actually use a class or the flag looks like it did nothing.
 function body(o: Opts) {
     if (o.daisyui) {
+        //the class list is written in the order sortTailwindcss produces
+        //(layout after the component class), so the first "format:fix" on a
+        //fresh scaffold is a no-op rather than a diff
         return `    return (
-        <main className="card mx-auto mt-8 max-w-lg bg-base-100 shadow">
+        <main className="card bg-base-100 mx-auto mt-8 max-w-lg shadow">
             <div className="card-body">
                 <h1 className="card-title">Hello World from ${o.name} app!</h1>
                 <button className="btn btn-primary">daisyUI button</button>
@@ -37,7 +41,7 @@ function body(o: Opts) {
     );`;
     }
 
-    return `    return <h1>Hello World from ${o.name} app!</h1>`;
+    return `    return <h1>Hello World from ${o.name} app!</h1>;`;
 }
 
 //A worked example rather than prose: the first query in the collection,
@@ -53,15 +57,13 @@ function example(o: Opts) {
 
     const name = first.name;
     const args = hasParams(first)
-        ? `{ /* ${name[0].toUpperCase()}${name.slice(
-              1
-          )}Params, see ./api/types */ }`
+        ? `{ /* ${name[0].toUpperCase()}${name.slice(1)}Params, see ./api/types */ }`
         : "";
 
     return `//Your API is wired up. To read from it:
 //
-//    import { useQuery } from '@tanstack/react-query';
-//    import { ${name}Query } from './api';
+//    import { useQuery } from "@tanstack/react-query";
+//    import { ${name}Query } from "./api";
 //
 //    const { data, isPending, error } = useQuery(${name}Query(${args}));
 `;
@@ -75,24 +77,25 @@ export default function genAppTsx(o: Opts) {
     //cache away.
     const provider = o.api
         ? {
-              imports: `import { QueryClient, QueryClientProvider } from '@tanstack/react-query';\n`,
+              imports: `import { QueryClient, QueryClientProvider } from "@tanstack/react-query";\n`,
               client: `\nconst queryClient = new QueryClient();\n`,
               open: `\n    <QueryClientProvider client={queryClient}>\n        `,
-              close: `\n    </QueryClientProvider>\n`,
+              //the trailing comma is oxfmt's trailingComma: "all" default,
+              //applied to root.render's only argument now that it spans lines
+              close: `\n    </QueryClientProvider>,\n`,
           }
         : { imports: "", client: "", open: "", close: "" };
 
     const tpl = `
-${provider.imports}import { createRoot } from 'react-dom/client';
+${provider.imports}import { createRoot } from "react-dom/client";
 
-import './app.css';
+import "./app.css";
 ${provider.client}
-${example(o)}function App()
-{
+${example(o)}function App() {
 ${body(o)}
 }
 
-const container = document.getElementById('app')!;
+const container = document.getElementById("app")!;
 const root = createRoot(container);
 root.render(${provider.open}<App />${provider.close});${register}
 `;

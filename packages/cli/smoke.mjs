@@ -37,6 +37,33 @@ function scaffold(dir, args) {
     });
 }
 
+// Every template ships oxlint and oxfmt now, so every template can be held to
+// them. This is the assertion that a freshly scaffolded app is clean out of
+// the box - the failure it exists to catch is a generated source that trips a
+// default-on rule, which is how "react/react-in-jsx-scope" was found: it
+// predates the automatic runtime and every template here generates
+// "jsx": "react-jsx", so leaving it on made a brand new app lint dirty.
+//
+// format:check is the other half. The generated sources are written in the
+// style oxfmt produces, so anyone running format:fix on an untouched scaffold
+// should get no diff at all.
+function quality(app) {
+    for (const script of ["lint", "format:check"]) {
+        check(
+            `${script} passes on a fresh scaffold`,
+            (() => {
+                try {
+                    run("pnpm", ["run", script], app);
+                    return true;
+                } catch (err) {
+                    console.log(err.stdout || err.message);
+                    return false;
+                }
+            })(),
+        );
+    }
+}
+
 function exitCodeOf(args, cwd) {
     try {
         execFileSync(process.execPath, [cli, ...args], { cwd, stdio: "pipe" });
@@ -121,9 +148,7 @@ async function startFixtureApi(dir) {
                 resolve(Number(match[1]));
             }
         });
-        proc.on("exit", (code) =>
-            reject(new Error(`fixture api exited with ${code}`))
-        );
+        proc.on("exit", (code) => reject(new Error(`fixture api exited with ${code}`)));
     });
 
     return { proc, port };
@@ -141,20 +166,13 @@ try {
 
     check("no args exits 1", exitCodeOf([], tmp) === 1);
     check("--help exits 0", exitCodeOf(["--help"], tmp) === 0);
-    check(
-        "--help does not create a directory",
-        !fs.existsSync(path.join(tmp, "--help"))
-    );
-    check(
-        "unknown template exits 1",
-        exitCodeOf(["x", "-t", "svelte"], tmp) === 1
-    );
+    check("--help does not create a directory", !fs.existsSync(path.join(tmp, "--help")));
+    check("unknown template exits 1", exitCodeOf(["x", "-t", "svelte"], tmp) === 1);
     check("unquotable name is rejected", exitCodeOf(['a"b'], tmp) === 1);
     check(
         "--version prints the package version",
         scaffold(tmp, ["--version"]).trim() ===
-            JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
-                .version
+            JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version,
     );
 
     // --- templates ---------------------------------------------------------
@@ -165,6 +183,8 @@ try {
             files: [
                 "package.json",
                 "pnpm-workspace.yaml",
+                ".oxlintrc.json",
+                ".oxfmtrc.json",
                 "apps/web/package.json",
                 "apps/web/public/index.html",
                 "apps/web/src/app.tsx",
@@ -181,6 +201,8 @@ try {
             files: [
                 "package.json",
                 "pnpm-workspace.yaml",
+                ".oxlintrc.json",
+                ".oxfmtrc.json",
                 "apps/extension/package.json",
                 "apps/extension/public/manifest.json",
                 "apps/extension/public/popup.html",
@@ -199,6 +221,8 @@ try {
             files: [
                 "package.json",
                 "pnpm-workspace.yaml",
+                ".oxlintrc.json",
+                ".oxfmtrc.json",
                 "apps/web/tsconfig.sw.json",
                 "apps/web/public/index.html",
                 "apps/web/public/manifest.webmanifest",
@@ -215,17 +239,21 @@ try {
         },
         {
             // the flags are meant to compose with a template rather than be
-            // one, so this row exercises the react template with both on.
+            // one, so this row exercises the react template with all three on.
             // It is also the only row that produces an .npmrc, because
-            // predev is a pre<name> hook and pnpm skips those by default.
+            // predev is a pre<name> hook and pnpm skips those by default,
+            // and the only one that produces a hook.
             name: "tailwind",
-            args: ["--tailwind", "--daisyui"],
+            args: ["--tailwind", "--daisyui", "--husky"],
             files: [
                 "package.json",
                 ".npmrc",
+                ".husky/pre-commit",
+                ".lintstagedrc.json",
                 "apps/web/src/styles.css",
                 "apps/web/src/app.css",
             ],
+            husky: true,
             jsonFiles: ["apps/web/package.json"],
             outDir: "apps/web/public",
             outputs: ["app.js", "app.css"],
@@ -241,6 +269,8 @@ try {
             files: [
                 "package.json",
                 "pnpm-workspace.yaml",
+                ".oxlintrc.json",
+                ".oxfmtrc.json",
                 ".gitignore",
                 "apps/mobile/package.json",
                 "apps/mobile/app.json",
@@ -353,18 +383,12 @@ try {
         // pnpm ignores package.json's "workspaces" array, so this file is
         // what actually makes apps/* packages. Read before the resolveOnly
         // branch below, which needs it too.
-        const workspaceYaml = fs.readFileSync(
-            path.join(app, "pnpm-workspace.yaml"),
-            "utf8"
-        );
-        check(
-            "pnpm-workspace.yaml lists apps/*",
-            /^\s*-\s*apps\/\*\s*$/m.test(workspaceYaml)
-        );
+        const workspaceYaml = fs.readFileSync(path.join(app, "pnpm-workspace.yaml"), "utf8");
+        check("pnpm-workspace.yaml lists apps/*", /^\s*-\s*apps\/\*\s*$/m.test(workspaceYaml));
         check(
             "the root manifest declares no npm workspaces",
-            JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"))
-                .workspaces === undefined
+            JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8")).workspaces ===
+                undefined,
         );
 
         // esbuild unpacks its binary in a postinstall, which pnpm skips unless
@@ -373,7 +397,7 @@ try {
         // tsx, so every workspace file names it.
         check(
             "esbuild is allowed to run its postinstall",
-            /allowBuilds:\s*\n\s*esbuild:\s*true/.test(workspaceYaml)
+            /allowBuilds:\s*\n\s*esbuild:\s*true/.test(workspaceYaml),
         );
 
         // expo: prove the pinned versions still resolve against each other,
@@ -389,35 +413,24 @@ try {
                         console.log(err.stdout || err.message);
                         return false;
                     }
-                })()
+                })(),
             );
 
             const mobile = path.join(app, "apps/mobile");
 
-            const pkg = JSON.parse(
-                fs.readFileSync(path.join(mobile, "package.json"), "utf8")
-            );
+            const pkg = JSON.parse(fs.readFileSync(path.join(mobile, "package.json"), "utf8"));
             check("main points at index.ts", pkg.main === "index.ts");
             check("expo is a dependency", pkg.dependencies.expo !== undefined);
 
             // the template ships no binary assets, so app.json must not
             // reference any - expo falls back to its own defaults
-            const appJson = fs.readFileSync(
-                path.join(mobile, "app.json"),
-                "utf8"
-            );
-            check(
-                "app.json references no image assets",
-                !/icon|splash|favicon/i.test(appJson)
-            );
+            const appJson = fs.readFileSync(path.join(mobile, "app.json"), "utf8");
+            check("app.json references no image assets", !/icon|splash|favicon/i.test(appJson));
 
             const tsconfig = JSON.parse(
-                fs.readFileSync(path.join(mobile, "tsconfig.json"), "utf8")
+                fs.readFileSync(path.join(mobile, "tsconfig.json"), "utf8"),
             );
-            check(
-                "tsconfig extends expo's base",
-                tsconfig.extends === "expo/tsconfig.base"
-            );
+            check("tsconfig extends expo's base", tsconfig.extends === "expo/tsconfig.base");
 
             // Metro walks node_modules upward and cannot follow pnpm's
             // symlinked layout. Asserting the setting is written is not
@@ -428,13 +441,18 @@ try {
             // behind a .pnpm/ symlink.
             check(
                 "nodeLinker: hoisted is set for metro",
-                /^nodeLinker:\s*hoisted$/m.test(workspaceYaml)
+                /^nodeLinker:\s*hoisted$/m.test(workspaceYaml),
             );
             run("pnpm", ["install"], app);
             check(
                 "the hoisted linker actually flattens node_modules",
-                fs.existsSync(path.join(app, "node_modules/expo/package.json"))
+                fs.existsSync(path.join(app, "node_modules/expo/package.json")),
             );
+
+            // this row has no build or typecheck to run, but the install above
+            // is real, so the oxc tools are present and App.tsx can be held to
+            // them like every other template
+            quality(app);
             continue;
         }
 
@@ -449,53 +467,71 @@ try {
                     console.log(err.stdout || err.message);
                     return false;
                 }
-            })()
+            })(),
         );
+
+        quality(app);
+
+        // --husky. The two files are asserted above with the rest; what
+        // matters here is the third piece, which lives in the root manifest
+        // and is the half a preset cannot emit.
+        if (t.husky) {
+            const pkg = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
+
+            check("prepare runs husky", pkg.scripts.prepare === "husky");
+            check(
+                "husky and lint-staged are devDependencies",
+                pkg.devDependencies.husky !== undefined &&
+                    pkg.devDependencies["lint-staged"] !== undefined,
+            );
+
+            // the hook is run by husky's shim with "sh -e", so a husky 8
+            // shebang or husky.sh source line in here is dead weight at best
+            const hook = fs.readFileSync(path.join(app, ".husky/pre-commit"), "utf8");
+            check("the hook carries no husky 8 shim", !/husky\.sh|#!/.test(hook));
+
+            // lint-staged hands oxfmt exactly the staged files, and the api
+            // client is in .oxfmtrc.json's ignorePatterns - so a commit of
+            // nothing but a regenerated client would leave oxfmt with every
+            // file excluded, where it exits 2 and takes the commit with it
+            const staged = fs.readFileSync(path.join(app, ".lintstagedrc.json"), "utf8");
+            check(
+                "oxfmt tolerates a fully-ignored staged set",
+                staged.includes("--no-error-on-unmatched-pattern"),
+            );
+        }
 
         if (t.name === "next-drizzle") {
             const web = path.join(app, "apps/web");
 
-            const pkg = JSON.parse(
-                fs.readFileSync(path.join(web, "package.json"), "utf8")
-            );
+            const pkg = JSON.parse(fs.readFileSync(path.join(web, "package.json"), "utf8"));
             check("next is a dependency", pkg.dependencies.next !== undefined);
             check(
                 "drizzle is wired up",
                 pkg.dependencies["drizzle-orm"] !== undefined &&
-                    pkg.dependencies["@libsql/client"] !== undefined
+                    pkg.dependencies["@libsql/client"] !== undefined,
             );
 
             // Turbopack is the default in Next 16, so the flag is gone
-            check(
-                "build does not pass --turbopack",
-                pkg.scripts.build === "next build"
-            );
+            check("build does not pass --turbopack", pkg.scripts.build === "next build");
 
             // a webpack key makes "next build" fail outright under Turbopack
             // rather than falling back to webpack
-            const config = fs.readFileSync(
-                path.join(web, "next.config.ts"),
-                "utf8"
-            );
-            check(
-                "next.config.ts declares no webpack config",
-                !/webpack/.test(config)
-            );
+            const config = fs.readFileSync(path.join(web, "next.config.ts"), "utf8");
+            check("next.config.ts declares no webpack config", !/webpack/.test(config));
 
             // Next rewrites tsconfig.json on first run and reports what it
             // changed. These two are the ones it insists on, so generating
             // them means a fresh scaffold produces no diff and no notice.
-            const tsconfig = JSON.parse(
-                fs.readFileSync(path.join(web, "tsconfig.json"), "utf8")
-            );
+            const tsconfig = JSON.parse(fs.readFileSync(path.join(web, "tsconfig.json"), "utf8"));
             check(
                 "jsx is react-jsx, which Next 16 mandates",
-                tsconfig.compilerOptions.jsx === "react-jsx"
+                tsconfig.compilerOptions.jsx === "react-jsx",
             );
             check(
                 "both generated route type dirs are included",
                 tsconfig.include.includes(".next/types/**/*.ts") &&
-                    tsconfig.include.includes(".next/dev/types/**/*.ts")
+                    tsconfig.include.includes(".next/dev/types/**/*.ts"),
             );
         }
 
@@ -514,55 +550,31 @@ try {
         // set outDir "." and give full paths instead.
         const outDir = t.outDir ?? ".";
         for (const out of t.outputs) {
-            check(
-                `builds ${path.join(outDir, out)}`,
-                fs.existsSync(path.join(app, outDir, out))
-            );
+            check(`builds ${path.join(outDir, out)}`, fs.existsSync(path.join(app, outDir, out)));
         }
 
         // --minify is what makes esbuild define NODE_ENV as "production";
         // without it the bundle ships React's development build.
         if (t.name === "react") {
-            const bundle = fs.readFileSync(
-                path.join(app, "apps/web/public", "app.js"),
-                "utf8"
-            );
-            check(
-                "ships production react",
-                !bundle.includes("react-dom.development")
-            );
+            const bundle = fs.readFileSync(path.join(app, "apps/web/public", "app.js"), "utf8");
+            check("ships production react", !bundle.includes("react-dom.development"));
         }
 
         // a module service worker has to be registered with {type:"module"},
         // which is not supported everywhere, so sw.js must stay classic
         if (t.name === "pwa") {
-            const sw = fs.readFileSync(
-                path.join(app, "apps/web/public", "sw.js"),
-                "utf8"
-            );
-            check(
-                "sw.js is not an es module",
-                !/^\s*(import|export)[ {]/m.test(sw)
-            );
+            const sw = fs.readFileSync(path.join(app, "apps/web/public", "sw.js"), "utf8");
+            check("sw.js is not an es module", !/^\s*(import|export)[ {]/m.test(sw));
 
             const manifest = JSON.parse(
-                fs.readFileSync(
-                    path.join(app, "apps/web/public", "manifest.webmanifest"),
-                    "utf8"
-                )
+                fs.readFileSync(path.join(app, "apps/web/public", "manifest.webmanifest"), "utf8"),
             );
             for (const key of ["name", "start_url", "display", "icons"]) {
                 check(`manifest has ${key}`, manifest[key] !== undefined);
             }
 
-            const html = fs.readFileSync(
-                path.join(app, "apps/web/public", "index.html"),
-                "utf8"
-            );
-            check(
-                "index.html links the manifest",
-                html.includes('rel="manifest"')
-            );
+            const html = fs.readFileSync(path.join(app, "apps/web/public", "index.html"), "utf8");
+            check("index.html links the manifest", html.includes('rel="manifest"'));
 
             // Chrome will not offer to install without raster icons, so the
             // pngs are generated rather than left to the user. Parse the
@@ -573,29 +585,24 @@ try {
                 ["icon-512.png", 512],
                 ["icon-maskable-512.png", 512],
             ]) {
-                const png = fs.readFileSync(
-                    path.join(app, "apps/web/public", file)
-                );
-                const signature = Buffer.from([
-                    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-                ]);
+                const png = fs.readFileSync(path.join(app, "apps/web/public", file));
+                const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
                 check(`${file} is a png`, png.subarray(0, 8).equals(signature));
                 check(
                     `${file} is ${expected}x${expected}`,
-                    png.readUInt32BE(16) === expected &&
-                        png.readUInt32BE(20) === expected
+                    png.readUInt32BE(16) === expected && png.readUInt32BE(20) === expected,
                 );
             }
 
             const icons = manifest.icons.map((i) => i.src);
             check(
                 "manifest lists the raster icons",
-                icons.includes("icon-192.png") && icons.includes("icon-512.png")
+                icons.includes("icon-192.png") && icons.includes("icon-512.png"),
             );
             check(
                 "manifest has a maskable icon",
-                manifest.icons.some((i) => i.purpose === "maskable")
+                manifest.icons.some((i) => i.purpose === "maskable"),
             );
         }
 
@@ -604,14 +611,8 @@ try {
         // out of public/ where it would break the live-reload swap. daisyui
         // is tree-shaken, so .btn only lands here if the markup drove it.
         if (t.name === "tailwind") {
-            const css = fs.readFileSync(
-                path.join(app, "apps/web/public", "app.css"),
-                "utf8"
-            );
-            check(
-                "tailwind output reaches public/app.css",
-                css.includes("tailwindcss")
-            );
+            const css = fs.readFileSync(path.join(app, "apps/web/public", "app.css"), "utf8");
+            check("tailwind output reaches public/app.css", css.includes("tailwindcss"));
             check("daisyui components are compiled in", css.includes(".btn"));
 
             // "predev" is a pre<name> hook, and pnpm does not run those for
@@ -620,28 +621,19 @@ try {
             check(
                 "pre/post scripts are enabled for predev",
                 /^enable-pre-post-scripts=true$/m.test(
-                    fs.readFileSync(path.join(app, ".npmrc"), "utf8")
-                )
+                    fs.readFileSync(path.join(app, ".npmrc"), "utf8"),
+                ),
             );
         }
 
         // content scripts and MV3 service workers must be classic scripts
         if (t.name === "extension") {
             for (const out of ["content.js", "background.js", "popup.js"]) {
-                const js = fs.readFileSync(
-                    path.join(app, "apps/extension/public", out),
-                    "utf8"
-                );
-                check(
-                    `${out} is not an es module`,
-                    !/^\s*(import|export)[ {]/m.test(js)
-                );
+                const js = fs.readFileSync(path.join(app, "apps/extension/public", out), "utf8");
+                check(`${out} is not an es module`, !/^\s*(import|export)[ {]/m.test(js));
             }
             const manifest = JSON.parse(
-                fs.readFileSync(
-                    path.join(app, "apps/extension/public", "manifest.json"),
-                    "utf8"
-                )
+                fs.readFileSync(path.join(app, "apps/extension/public", "manifest.json"), "utf8"),
             );
             for (const key of ["manifest_version", "name", "version"]) {
                 check(`manifest has ${key}`, manifest[key] !== undefined);
@@ -666,15 +658,9 @@ try {
                 .map((f) => fs.readFileSync(path.join(assets, f), "utf8"))
                 .join("");
 
-            check(
-                "ships production react",
-                !js.includes("react-dom.development")
-            );
+            check("ships production react", !js.includes("react-dom.development"));
             check("tailwind output reaches the bundle", css.includes("--tw-"));
-            check(
-                "a utility used in App.tsx is compiled in",
-                /\.max-w-lg\b/.test(css)
-            );
+            check("a utility used in App.tsx is compiled in", /\.max-w-lg\b/.test(css));
         }
 
         // the server half is bundled by rolldown with its runtime deps left
@@ -682,32 +668,19 @@ try {
         // system does at registration time, and that fails at runtime rather
         // than at build.
         if (t.name === "fastify-react") {
-            const server = fs.readFileSync(
-                path.join(app, "apps/server/dist/index.js"),
-                "utf8"
-            );
-            check(
-                "the server bundle is an es module",
-                /^\s*import[ {]/m.test(server)
-            );
-            check(
-                "fastify is left external",
-                /from ["']fastify["']/.test(server)
-            );
+            const server = fs.readFileSync(path.join(app, "apps/server/dist/index.js"), "utf8");
+            check("the server bundle is an es module", /^\s*import[ {]/m.test(server));
+            check("fastify is left external", /from ["']fastify["']/.test(server));
 
             // both halves must be reachable from one fan-out
-            const rootPkg = JSON.parse(
-                fs.readFileSync(path.join(app, "package.json"), "utf8")
-            );
+            const rootPkg = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
             check(
                 "the root can start either half on its own",
-                Boolean(
-                    rootPkg.scripts["dev:server"] && rootPkg.scripts["dev:web"]
-                )
+                Boolean(rootPkg.scripts["dev:server"] && rootPkg.scripts["dev:web"]),
             );
             check(
                 "the root does not depend on concurrently",
-                rootPkg.devDependencies?.concurrently === undefined
+                rootPkg.devDependencies?.concurrently === undefined,
             );
         }
 
@@ -718,22 +691,13 @@ try {
         run("git", ["init", "-q", "."], app);
         run("git", ["add", "-A"], app);
         const staged = run("git", ["diff", "--cached", "--name-only"], app);
-        const leaked = t.outputs.filter((o) =>
-            staged.includes(path.join(outDir, o))
-        );
-        check(
-            "build output is gitignored",
-            leaked.length === 0,
-            leaked.join(", ")
-        );
+        const leaked = t.outputs.filter((o) => staged.includes(path.join(outDir, o)));
+        check("build output is gitignored", leaked.length === 0, leaked.join(", "));
 
         // with --tailwind the stylesheet stops being a source file, so it has
         // to be ignored too or every user commits build output
         if (t.name === "tailwind") {
-            check(
-                "generated src/app.css is gitignored",
-                !staged.includes("apps/web/src/app.css")
-            );
+            check("generated src/app.css is gitignored", !staged.includes("apps/web/src/app.css"));
         }
     }
 
@@ -757,30 +721,27 @@ try {
         fs.writeFileSync(file, body);
     };
 
-    write(
-        "bruno.json",
-        '{ "version": "1", "name": "fixture", "type": "collection" }'
-    );
+    write("bruno.json", '{ "version": "1", "name": "fixture", "type": "collection" }');
     write(
         "environments/local.bru",
-        `vars {\n  baseUrl: http://127.0.0.1:${port}\n}\n\nvars:secret [\n  apiToken\n]\n`
+        `vars {\n  baseUrl: http://127.0.0.1:${port}\n}\n\nvars:secret [\n  apiToken\n]\n`,
     );
     // a disabled query param, a disabled header holding an apostrophe (which
     // would break a naive scanner), and a url query string that has to merge
     // with params:query without being sent twice
     write(
         "users/list.bru",
-        `meta {\n  name: List users\n  seq: 1\n}\n\nget {\n  url: {{baseUrl}}/users?page=1\n  auth: bearer\n}\n\nparams:query {\n  page: 1\n  ~verbose: true\n}\n\nheaders {\n  Accept: application/json\n  Authorization: Bearer {{apiToken}}\n  ~X-Note: don't send this\n}\n`
+        `meta {\n  name: List users\n  seq: 1\n}\n\nget {\n  url: {{baseUrl}}/users?page=1\n  auth: bearer\n}\n\nparams:query {\n  page: 1\n  ~verbose: true\n}\n\nheaders {\n  Accept: application/json\n  Authorization: Bearer {{apiToken}}\n  ~X-Note: don't send this\n}\n`,
     );
     write(
         "users/get.bru",
-        `meta {\n  name: Get user\n  seq: 2\n}\n\nget {\n  url: {{baseUrl}}/users/:id\n}\n\nparams:path {\n  id: 1\n}\n`
+        `meta {\n  name: Get user\n  seq: 2\n}\n\nget {\n  url: {{baseUrl}}/users/:id\n}\n\nparams:path {\n  id: 1\n}\n`,
     );
     // a body:json template with a {{var}} in it, followed by a tests block
     // full of braces and quotes - both have to survive the block scanner
     write(
         "users/create.bru",
-        `meta {\n  name: Create user\n  seq: 3\n}\n\npost {\n  url: {{baseUrl}}/users\n  body: json\n}\n\nbody:json {\n  {\n    "name": "{{newName}}",\n    "admin": false\n  }\n}\n\ntests {\n  test("created", function() { expect(res.status).to.equal(201); });\n}\n`
+        `meta {\n  name: Create user\n  seq: 3\n}\n\npost {\n  url: {{baseUrl}}/users\n  body: json\n}\n\nbody:json {\n  {\n    "name": "{{newName}}",\n    "admin": false\n  }\n}\n\ntests {\n  test("created", function() { expect(res.status).to.equal(201); });\n}\n`,
     );
 
     const app = path.join(tmp, "apiapp");
@@ -803,80 +764,48 @@ try {
         check(`emits ${f}`, fs.existsSync(path.join(app, f)));
     }
 
-    const types = fs.readFileSync(
-        path.join(app, "apps/web/src/api/types.ts"),
-        "utf8"
-    );
+    const types = fs.readFileSync(path.join(app, "apps/web/src/api/types.ts"), "utf8");
 
     // the inference claims to describe what the server really returned, so
     // assert on the parts a declared-types approach could not have known
     check("infers a field the server returned", /\bname: string;/.test(types));
-    check(
-        "a key absent from one element is optional",
-        /\bnickname\?: string;/.test(types)
-    );
-    check(
-        "a null observed once becomes a union",
-        /\bemail: string \| null;/.test(types)
-    );
-    check(
-        "an empty array merges with a populated one",
-        /\btags: string\[\];/.test(types)
-    );
+    check("a key absent from one element is optional", /\bnickname\?: string;/.test(types));
+    check("a null observed once becomes a union", /\bemail: string \| null;/.test(types));
+    check("an empty array merges with a populated one", /\btags: string\[\];/.test(types));
     check("nested objects are inlined", /\bseen: number;/.test(types));
 
     // mutations are not executed by default: scaffolding must not POST to a
     // real API. The type is therefore unknown, and says why.
     check(
         "an unsampled mutation is typed unknown",
-        /export type CreateUserResponse = unknown;/.test(types)
+        /export type CreateUserResponse = unknown;/.test(types),
     );
     check(
         "the request body type comes from the body:json template",
-        /export type CreateUserBody = \{[^}]*\bname: string;[^}]*\badmin: boolean;/s.test(
-            types
-        )
+        /export type CreateUserBody = \{[^}]*\bname: string;[^}]*\badmin: boolean;/s.test(types),
     );
 
-    const samples = JSON.parse(
-        fs.readFileSync(path.join(app, "api/samples.json"), "utf8")
-    );
-    check(
-        "samples.json records the sampled endpoints",
-        samples.endpoints.listUsers.status === 200
-    );
+    const samples = JSON.parse(fs.readFileSync(path.join(app, "api/samples.json"), "utf8"));
+    check("samples.json records the sampled endpoints", samples.endpoints.listUsers.status === 200);
     check(
         "samples.json says why a skip was skipped",
-        typeof samples.endpoints.createUser?.skipped === "string"
+        typeof samples.endpoints.createUser?.skipped === "string",
     );
 
     // a disabled header must not reach the generated client, and neither may
     // Authorization - that belongs in config.ts, which is not committed-safe
-    const queriesSrc = fs.readFileSync(
-        path.join(app, "apps/web/src/api/queries.ts"),
-        "utf8"
-    );
+    const queriesSrc = fs.readFileSync(path.join(app, "apps/web/src/api/queries.ts"), "utf8");
     check("a ~disabled header is dropped", !queriesSrc.includes("X-Note"));
-    check(
-        "Authorization never reaches the client",
-        !/Authorization/i.test(queriesSrc)
-    );
-    check(
-        "a path parameter is url-encoded",
-        queriesSrc.includes("segment(params.id)")
-    );
+    check("Authorization never reaches the client", !/Authorization/i.test(queriesSrc));
+    check("a path parameter is url-encoded", queriesSrc.includes("segment(params.id)"));
 
     // the marker and the regeneration script live in the root manifest, the
     // runtime dependency in the app that imports the client
-    const apiPkg = JSON.parse(
-        fs.readFileSync(path.join(app, "package.json"), "utf8")
-    );
-    const webPkg = JSON.parse(
-        fs.readFileSync(path.join(app, "apps/web/package.json"), "utf8")
-    );
+    const apiPkg = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
+    const webPkg = JSON.parse(fs.readFileSync(path.join(app, "apps/web/package.json"), "utf8"));
     check(
         "tanstack query is a dependency of the app",
-        Boolean(webPkg.dependencies["@tanstack/react-query"])
+        Boolean(webPkg.dependencies["@tanstack/react-query"]),
     );
     check("the collection path is recorded", apiPkg.tsreact?.api === "api");
 
@@ -898,12 +827,12 @@ try {
                 console.log(err.stdout || err.message);
                 return false;
             }
-        })()
+        })(),
     );
     run("pnpm", ["run", "build"], app);
     check(
         "builds apps/web/public/app.js",
-        fs.existsSync(path.join(app, "apps/web/public", "app.js"))
+        fs.existsSync(path.join(app, "apps/web/public", "app.js")),
     );
 
     // MV3 blocks a cross-origin fetch that is not declared, and it fails as an
@@ -912,27 +841,18 @@ try {
     const ext = path.join(tmp, "apiext");
     scaffold(tmp, ["apiext", "--template", "extension", "--api", collection]);
     const extManifest = JSON.parse(
-        fs.readFileSync(
-            path.join(ext, "apps/extension/public/manifest.json"),
-            "utf8"
-        )
+        fs.readFileSync(path.join(ext, "apps/extension/public/manifest.json"), "utf8"),
     );
     check(
         "the extension declares host_permissions for the api",
-        (extManifest.host_permissions ?? []).some((h) => h.includes(`:${port}`))
+        (extManifest.host_permissions ?? []).some((h) => h.includes(`:${port}`)),
     );
 
     // The two-app template is where apiRoot() has an actual choice to make -
     // the client belongs to the web app, not the server. File assertions
     // only, for the same reason as the extension above.
     const mono = path.join(tmp, "apimono");
-    scaffold(tmp, [
-        "apimono",
-        "--template",
-        "fastify-react",
-        "--api",
-        collection,
-    ]);
+    scaffold(tmp, ["apimono", "--template", "fastify-react", "--api", collection]);
     for (const f of [
         "apps/web/src/api/types.ts",
         "apps/web/src/api/config.ts",
@@ -943,14 +863,12 @@ try {
     }
     check(
         "the client does not land at the repository root",
-        !fs.existsSync(path.join(mono, "src"))
+        !fs.existsSync(path.join(mono, "src")),
     );
-    const monoPkg = JSON.parse(
-        fs.readFileSync(path.join(mono, "package.json"), "utf8")
-    );
+    const monoPkg = JSON.parse(fs.readFileSync(path.join(mono, "package.json"), "utf8"));
     check(
         "the template is recorded so regeneration can find the client",
-        monoPkg.tsreact?.template === "fastify-react"
+        monoPkg.tsreact?.template === "fastify-react",
     );
 
     // Everything below runs with the fixture API switched off. This is the
@@ -959,16 +877,11 @@ try {
     fixture.kill();
     await new Promise((resolve) => fixture.on("exit", resolve));
 
-    const before = fs.readFileSync(
-        path.join(app, "apps/web/src/api/types.ts"),
-        "utf8"
-    );
+    const before = fs.readFileSync(path.join(app, "apps/web/src/api/types.ts"), "utf8");
     const configPath = path.join(app, "apps/web/src/api/config.ts");
     fs.writeFileSync(
         configPath,
-        fs
-            .readFileSync(configPath, "utf8")
-            .replace("token: undefined", "token: 'kept'")
+        fs.readFileSync(configPath, "utf8").replace("token: undefined", "token: 'kept'"),
     );
     fs.rmSync(path.join(app, "apps/web/src/api/types.ts"));
     fs.rmSync(path.join(app, "apps/web/src/api/queries.ts"));
@@ -977,54 +890,40 @@ try {
     check("api regenerates offline", regen.status === 0, regen.output);
     check(
         "regenerated types are byte-identical",
-        fs.readFileSync(path.join(app, "apps/web/src/api/types.ts"), "utf8") ===
-            before
+        fs.readFileSync(path.join(app, "apps/web/src/api/types.ts"), "utf8") === before,
     );
     // config.ts holds the base url and the token the user typed in. It is the
     // one file regeneration must never clobber.
     check(
         "a hand-edited config.ts survives regeneration",
-        fs.readFileSync(configPath, "utf8").includes("token: 'kept'")
+        fs.readFileSync(configPath, "utf8").includes("token: 'kept'"),
     );
 
     // --refresh is an explicit "go and ask the API again", so with the API
     // gone it has to fail - but as a sentence, not a stack trace
     const refreshed = runCli(["api", "--refresh"], app);
-    check(
-        "--refresh against a dead api exits non-zero",
-        refreshed.status === 1
-    );
+    check("--refresh against a dead api exits non-zero", refreshed.status === 1);
     check(
         "--refresh failure names the cause",
         refreshed.output.includes("Could not sample any endpoint"),
-        refreshed.output
+        refreshed.output,
     );
     check(
         "--refresh failure suggests a way forward",
         refreshed.output.includes("--api-sample=none"),
-        refreshed.output
+        refreshed.output,
     );
 
     // --api-sample=none must not touch the network at all, which is the only
     // reason this can run with the server already closed
     const offline = path.join(tmp, "apinone");
-    const none = runCli(
-        ["apinone", "--api", collection, "--api-sample=none"],
-        tmp
-    );
-    check(
-        "--api-sample=none scaffolds with no network",
-        none.status === 0,
-        none.output
-    );
+    const none = runCli(["apinone", "--api", collection, "--api-sample=none"], tmp);
+    check("--api-sample=none scaffolds with no network", none.status === 0, none.output);
     check(
         "every response is unknown without samples",
         !/export type \w+Response = \{/.test(
-            fs.readFileSync(
-                path.join(offline, "apps/web/src/api/types.ts"),
-                "utf8"
-            )
-        )
+            fs.readFileSync(path.join(offline, "apps/web/src/api/types.ts"), "utf8"),
+        ),
     );
 
     // An app scaffolded before generated apps became workspaces has a flat
@@ -1038,47 +937,35 @@ try {
     });
     fs.writeFileSync(
         path.join(legacy, "package.json"),
-        JSON.stringify({ name: "legacyapp", tsreact: { api: "api" } }, null, 4)
+        JSON.stringify({ name: "legacyapp", tsreact: { api: "api" } }, null, 4),
     );
 
     const legacyRegen = runCli(["api"], legacy);
-    check(
-        "a pre-workspace app still regenerates",
-        legacyRegen.status === 0,
-        legacyRegen.output
-    );
+    check("a pre-workspace app still regenerates", legacyRegen.status === 0, legacyRegen.output);
     check(
         "it regenerates into the flat src/api it already had",
-        fs.existsSync(path.join(legacy, "src/api/types.ts"))
+        fs.existsSync(path.join(legacy, "src/api/types.ts")),
     );
     check(
         "it does not create a second client under apps/",
-        !fs.existsSync(path.join(legacy, "apps"))
+        !fs.existsSync(path.join(legacy, "apps")),
     );
 
     // "api" is a legal app name; only a directory this CLI generated with
     // --api may be regenerated in place
     check(
         "a bad collection path exits 1",
-        exitCodeOf(
-            ["broken", "--api", path.join(tmp, "no-such-collection")],
-            tmp
-        ) === 1
+        exitCodeOf(["broken", "--api", path.join(tmp, "no-such-collection")], tmp) === 1,
     );
     check(
         "no directory is left behind when sampling fails",
-        !fs.existsSync(path.join(tmp, "broken"))
+        !fs.existsSync(path.join(tmp, "broken")),
     );
-    check(
-        "--refresh without --api exits 1",
-        exitCodeOf(["x", "--refresh"], tmp) === 1
-    );
+    check("--refresh without --api exits 1", exitCodeOf(["x", "--refresh"], tmp) === 1);
 } finally {
     fixture?.kill();
     fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log(
-    failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`
-);
+console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

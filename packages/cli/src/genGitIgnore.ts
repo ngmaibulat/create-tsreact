@@ -10,11 +10,7 @@ import type { Opts, Template } from "./cli.js";
 //expo's row is empty because it never calls this - it has its own ignore
 //file, see genExpoGitIgnore.ts - but it is listed to keep that guard total.
 const OUTPUT: Record<Template, string[]> = {
-    react: [
-        "apps/web/public/app.js",
-        "apps/web/public/app.css",
-        "apps/web/public/*.map",
-    ],
+    react: ["apps/web/public/app.js", "apps/web/public/app.css", "apps/web/public/*.map"],
     pwa: [
         "apps/web/public/app.js",
         "apps/web/public/app.css",

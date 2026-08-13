@@ -1,5 +1,5 @@
-import type { Files, Opts } from "../cli.js";
 import apiFiles from "../apiFiles.js";
+import type { Files, Opts } from "../cli.js";
 import genEditorConfig from "../genEditorConfig.js";
 import genEnvDts from "../genEnvDts.js";
 import genGitIgnore from "../genGitIgnore.js";
@@ -14,20 +14,21 @@ import genViteConfig from "../genViteConfig.js";
 import genViteIndexHtml from "../genViteIndexHtml.js";
 import genVitePkgJson from "../genVitePackageJson.js";
 import genViteTsConfig from "../genViteTsConfig.js";
+import huskyFiles from "../huskyFiles.js";
 
-//No .prettierrc.json: this template formats with oxfmt, configured in
-//.oxfmtrc.json at the root alongside .oxlintrc.json - one config and one pass
-//for the whole workspace. index.html sits at the app root rather than in
-//public/ because that is where vite looks for its entry.
+//index.html sits at the app root rather than in public/, because that is where
+//vite looks for its entry. Everything else here is the shape every preset now
+//has: the oxc configs at the workspace root, one pass for the whole workspace.
 export default function viteSpa(o: Opts): Files {
     return {
         ...apiFiles(o),
+        ...huskyFiles(o),
         "package.json": genRootPkgJson(o),
         "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
         ".gitignore": genGitIgnore(o),
         ".editorconfig": genEditorConfig(),
-        ".oxlintrc.json": genOxlintrc(),
-        ".oxfmtrc.json": genOxfmtrc(),
+        ".oxlintrc.json": genOxlintrc(o),
+        ".oxfmtrc.json": genOxfmtrc(o),
 
         "apps/web/package.json": genVitePkgJson(o),
         "apps/web/tsconfig.json": genViteTsConfig(),

@@ -7,13 +7,9 @@ import type { ApiSpec } from "./spec.js";
 export default function keysTs(spec: ApiSpec) {
     const list = queries(spec);
 
-    const imports = list
-        .filter(hasParams)
-        .map((e) => `${pascal(e.name)}Params`);
+    const imports = list.filter(hasParams).map((e) => `${pascal(e.name)}Params`);
 
-    const types = imports.length
-        ? `\nimport type { ${imports.join(", ")} } from './types';\n`
-        : "";
+    const types = imports.length ? `\nimport type { ${imports.join(", ")} } from './types';\n` : "";
 
     const entries = list.map((e) => {
         const key = str(e.name);

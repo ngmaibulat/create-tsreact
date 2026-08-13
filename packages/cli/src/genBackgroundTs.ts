@@ -7,11 +7,11 @@
 export default function genBackgroundTs(name: string) {
     const tpl = `
 chrome.runtime.onInstalled.addListener(() => {
-    console.log('${name}: installed');
+    console.log("${name}: installed");
 });
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
-    console.log('${name}: message', msg, 'from tab', sender.tab?.id);
+    console.log("${name}: message", msg, "from tab", sender.tab?.id);
 });
 `;
 

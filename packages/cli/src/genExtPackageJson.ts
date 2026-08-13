@@ -14,8 +14,7 @@ import type { Opts } from "./cli.js";
 //the reload button on chrome://extensions to pick the changes up.
 export default function genExtPkgJson(o: Opts) {
     const entries = "src/popup.tsx src/content.ts src/background.ts";
-    const flags =
-        "--bundle --outdir=public --format=iife --platform=browser --target=es2022";
+    const flags = "--bundle --outdir=public --format=iife --platform=browser --target=es2022";
 
     //popup.css is what popup.tsx imports, so tailwind compiles into it and
     //esbuild picks it up from there - same chaining as the react template

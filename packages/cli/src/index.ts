@@ -1,23 +1,17 @@
 #!/usr/bin/env node
 
-import chalk from "chalk";
 import fs from "fs";
 import path from "path";
 
-import apiFiles, { LEGACY_API_ROOT, apiRoot, preserved } from "./apiFiles.js";
 import { collectionFiles, readCollection } from "@tsreact/bruno/collection";
 import { collect, deserialise } from "@tsreact/bruno/sample";
-import {
-    CliError,
-    parseArgs,
-    readVersion,
-    recordedCollection,
-    recordedTemplate,
-} from "./cli.js";
-import type { ApiArgs, Files, Opts, Template } from "./cli.js";
 import type { ApiSpec, Samples } from "@tsreact/bruno/spec";
-import { help, steps, templateList, templatesJson, usage } from "./help.js";
+import chalk from "chalk";
 
+import apiFiles, { LEGACY_API_ROOT, apiRoot, preserved } from "./apiFiles.js";
+import { CliError, parseArgs, readVersion, recordedCollection, recordedTemplate } from "./cli.js";
+import type { ApiArgs, Files, Opts, Template } from "./cli.js";
+import { help, steps, templateList, templatesJson, usage } from "./help.js";
 import expo from "./presets/expo.js";
 import extension from "./presets/extension.js";
 import fastifyReact from "./presets/fastifyReact.js";
@@ -50,10 +44,7 @@ function writeTree(dir: string, files: Files) {
     for (const [rel, contents] of Object.entries(files)) {
         const target = path.join(dir, rel);
         fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.writeFileSync(
-            target,
-            Buffer.isBuffer(contents) ? contents : contents.trim() + "\n"
-        );
+        fs.writeFileSync(target, Buffer.isBuffer(contents) ? contents : contents.trim() + "\n");
     }
 }
 
@@ -75,7 +66,7 @@ async function loadSpec(
     collectionDir: string,
     samplesFile: string | undefined,
     args: Pick<ApiArgs, "env" | "mode" | "refresh">,
-    recordedAs: string
+    recordedAs: string,
 ): Promise<ApiSpec> {
     const base = readCollection(collectionDir, args.env);
 
@@ -98,9 +89,7 @@ async function create(dir: string, opts: Opts, args: ApiArgs | undefined) {
 
         //the app gets its own copy of the collection, so api:gen keeps
         //working even if the directory --api pointed at moves away
-        for (const [rel, contents] of Object.entries(
-            collectionFiles(args.dir)
-        )) {
+        for (const [rel, contents] of Object.entries(collectionFiles(args.dir))) {
             extra[`${API_DIR}/${rel}`] = contents;
         }
     }
@@ -125,19 +114,17 @@ async function regenerate(parsed: {
 
     if (!recorded) {
         throw new CliError(
-            'No "tsreact" entry in package.json - this is not an app scaffolded with --api'
+            'No "tsreact" entry in package.json - this is not an app scaffolded with --api',
         );
     }
 
-    const pkg = JSON.parse(
-        fs.readFileSync(path.join(parsed.dir, "package.json"), "utf8")
-    );
+    const pkg = JSON.parse(fs.readFileSync(path.join(parsed.dir, "package.json"), "utf8"));
 
     const spec = await loadSpec(
         path.join(parsed.dir, recorded),
         path.join(parsed.dir, SAMPLES),
         parsed,
-        recorded
+        recorded,
     );
 
     //the flags do not change what the emitters produce, but the template does
@@ -150,11 +137,15 @@ async function regenerate(parsed: {
     //the real client untouched and stale.
     const template = recordedTemplate(parsed.dir);
 
+    //husky and the styling flags are false rather than read back off the
+    //manifest because regeneration only ever calls apiFiles, which touches
+    //neither: the hook and the stylesheet are scaffold-time decisions.
     const opts: Opts = {
         name: pkg.name ?? "app",
         template: template ?? "react",
         tailwind: false,
         daisyui: false,
+        husky: false,
         api: spec,
     };
 
@@ -170,11 +161,7 @@ async function regenerate(parsed: {
     writeTree(parsed.dir, files);
 
     console.log(
-        chalk.greenBright(
-            `\nRegenerated ${
-                Object.keys(files).length
-            } file(s) from ${recorded}/\n`
-        )
+        chalk.greenBright(`\nRegenerated ${Object.keys(files).length} file(s) from ${recorded}/\n`),
     );
 }
 

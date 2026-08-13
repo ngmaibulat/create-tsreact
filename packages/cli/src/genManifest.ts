@@ -1,5 +1,6 @@
-import type { Opts } from "./cli.js";
 import { origins } from "@tsreact/bruno/spec";
+
+import type { Opts } from "./cli.js";
 
 //"name" and "version" are required - Chrome refuses to load the extension
 //without them. Paths are relative to this file, so public/ is the folder to
@@ -14,9 +15,7 @@ export default function genManifest(o: Opts) {
     //looks like a broken API rather than a missing permission.
     const hosts = o.api ? origins(o.api) : [];
     const permissions = hosts.length
-        ? `,\n    "host_permissions": [${hosts
-              .map((h) => `"${h}"`)
-              .join(", ")}]`
+        ? `,\n    "host_permissions": [${hosts.map((h) => `"${h}"`).join(", ")}]`
         : "";
 
     const tpl = `

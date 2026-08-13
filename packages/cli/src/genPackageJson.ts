@@ -34,9 +34,7 @@ export default function genPkgJson(o: Opts) {
 
     //sw.ts needs the WebWorker lib, which cannot coexist with DOM, so it gets
     //its own tsconfig - see genSwTsConfig.ts
-    const typecheck = pwa
-        ? "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json"
-        : "tsc --noEmit";
+    const typecheck = pwa ? "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json" : "tsc --noEmit";
 
     //no dependency-free, windows-portable way to run two watchers from one
     //script, so the css watcher stays a separate command in its own terminal.
@@ -48,9 +46,7 @@ export default function genPkgJson(o: Opts) {
     //enable-pre-post-scripts is set, which is why genNpmrc.ts writes an
     //.npmrc for exactly this combination of template and flag. Without it
     //predev never fires and the first "pnpm dev" serves unstyled markup.
-    const tw = o.tailwind
-        ? `\n        "tw": "${TW} --watch",\n        "predev": "${TW}",`
-        : "";
+    const tw = o.tailwind ? `\n        "tw": "${TW} --watch",\n        "predev": "${TW}",` : "";
 
     const dev = [
         `"esbuild": "^0.28.0"`,
@@ -68,9 +64,7 @@ export default function genPkgJson(o: Opts) {
         dev.push(`"daisyui": "^5.7.0"`);
     }
 
-    const description = pwa
-        ? "Installable Typescript/React PWA"
-        : "Typescript/React application";
+    const description = pwa ? "Installable Typescript/React PWA" : "Typescript/React application";
 
     const deps = [`"react": "^19.2.0"`, `"react-dom": "^19.2.0"`];
 

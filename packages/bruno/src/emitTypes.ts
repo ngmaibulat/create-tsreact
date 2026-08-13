@@ -19,10 +19,7 @@ function inferBody(e: Endpoint, vars: Record<string, string>) {
 
     const substituted = substitute(e.body, vars);
 
-    for (const text of [
-        substituted,
-        substituted.replace(/\{\{[\w.-]+\}\}/g, "x"),
-    ]) {
+    for (const text of [substituted, substituted.replace(/\{\{[\w.-]+\}\}/g, "x")]) {
         try {
             return infer([JSON.parse(text)]);
         } catch {
@@ -38,9 +35,7 @@ function responseType(spec: ApiSpec, e: Endpoint) {
 
     if (!sample || "skipped" in sample) {
         const why = sample ? sample.skipped : "no sample";
-        return `//not sampled: ${why}\nexport type ${pascal(
-            e.name
-        )}Response = unknown;`;
+        return `//not sampled: ${why}\nexport type ${pascal(e.name)}Response = unknown;`;
     }
 
     return `export type ${pascal(e.name)}Response = ${infer([sample.body])};`;
@@ -51,11 +46,7 @@ export default function typesTs(spec: ApiSpec) {
 
     for (const e of spec.endpoints) {
         const name = pascal(e.name);
-        const parts = [
-            `//${e.method.toUpperCase()} ${e.url}${
-                e.folder ? `  (${e.folder})` : ""
-            }`,
-        ];
+        const parts = [`//${e.method.toUpperCase()} ${e.url}${e.folder ? `  (${e.folder})` : ""}`];
 
         if (hasParams(e)) {
             parts.push(`export type ${name}Params = {\n${paramsType(e)}\n};`);

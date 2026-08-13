@@ -11,11 +11,9 @@ import type { Opts } from "./cli.js";
 //The pwa template hits the same clash and cannot live with it, because sw.ts
 //uses FetchEvent/ExtendableEvent - hence the exclude and tsconfig.sw.json.
 export default function genTsConfig(o: Opts) {
-    const types =
-        o.template === "extension" ? `\n      "types": ["chrome"],` : "";
+    const types = o.template === "extension" ? `\n      "types": ["chrome"],` : "";
 
-    const exclude =
-        o.template === "pwa" ? `,\n    "exclude": ["src/sw.ts"]` : "";
+    const exclude = o.template === "pwa" ? `,\n    "exclude": ["src/sw.ts"]` : "";
 
     const tpl = `
 {

@@ -102,10 +102,7 @@ export default function mutationsTs(spec: ApiSpec) {
         onSuccess: () => {
             //${scope} - edit this list to taste
 ${targets
-    .map(
-        (q) =>
-            `            client.invalidateQueries({ queryKey: keys.${q.name}.all });`
-    )
+    .map((q) => `            client.invalidateQueries({ queryKey: keys.${q.name}.all });`)
     .join("\n")}
         },`
             : "";
@@ -115,22 +112,18 @@ ${targets
             return request<${name}Response>({
                 method: '${e.method.toUpperCase()}',
                 path: ${path},${queryObject(
-                  e,
-                  "                "
-              )}${headersObject(e, spec.vars, "                ")}${bodyField(
-                  vars.body
-              )}
+                    e,
+                    "                ",
+                )}${headersObject(e, spec.vars, "                ")}${bodyField(vars.body)}
             });
         }`
             : `(${vars.arg ? `${vars.arg}: ${vars.type}` : ""}) =>
             request<${name}Response>({
                 method: '${e.method.toUpperCase()}',
                 path: ${path},${queryObject(
-                  e,
-                  "                "
-              )}${headersObject(e, spec.vars, "                ")}${bodyField(
-                  vars.body
-              )}
+                    e,
+                    "                ",
+                )}${headersObject(e, spec.vars, "                ")}${bodyField(vars.body)}
             })`;
 
         return `//${e.method.toUpperCase()} ${e.url}

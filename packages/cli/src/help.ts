@@ -1,9 +1,9 @@
+import { detectPm } from "@tsreact/pm";
 import chalk from "chalk";
 
 import { apiRoot } from "./apiFiles.js";
-import { DESCRIPTIONS, TEMPLATES } from "./cli.js";
+import { DESCRIPTIONS, TEMPLATES, standaloneTailwind } from "./cli.js";
 import type { Opts } from "./cli.js";
-import { detectPm } from "@tsreact/pm";
 
 //error path: no app name was given
 export function usage() {
@@ -27,9 +27,7 @@ export function usage() {
 export function templateList(indent = "    ") {
     const width = Math.max(...TEMPLATES.map((t) => t.length));
 
-    return TEMPLATES.map(
-        (t) => `${indent}${t.padEnd(width)}  ${DESCRIPTIONS[t]}`
-    ).join("\n");
+    return TEMPLATES.map((t) => `${indent}${t.padEnd(width)}  ${DESCRIPTIONS[t]}`).join("\n");
 }
 
 //the same data as an array rather than a table, for anything that has to
@@ -43,7 +41,7 @@ export function templatesJson() {
             description: DESCRIPTIONS[t],
         })),
         null,
-        2
+        2,
     );
 }
 
@@ -65,6 +63,7 @@ Options:
     -t, --template <name>   ${names.join(" | ")}
         --tailwind          add Tailwind CSS v4
         --daisyui           add DaisyUI components (implies --tailwind)
+        --husky             add a pre-commit hook: format staged files, lint
         --api <dir>         generate a typed client from a Bruno collection
         --api-env <name>    which environments/<name>.bru to resolve vars from
         --api-sample <how>  safe (default) | all | none - see below
@@ -92,6 +91,7 @@ Examples:
     npx create-tsreact myapp --template pwa --daisyui
     npx create-tsreact myapp --template vite-spa
     npx create-tsreact myapp --template next-drizzle
+    npx create-tsreact myapp --template vite-spa --husky
     npx create-tsreact myapp --api ./bruno --api-env local
     npx create-tsreact .
 
@@ -113,12 +113,7 @@ must go after a "--" separator:
 //forced true for them (see TAILWIND_ALWAYS in cli.ts), so without this check
 //they would be told to run a "tw" script their package.json does not have.
 function tailwindNote(o: Opts) {
-    const standalone =
-        o.template === "react" ||
-        o.template === "pwa" ||
-        o.template === "extension";
-
-    if (!o.tailwind || !standalone) {
+    if (!standaloneTailwind(o)) {
         return "";
     }
 
@@ -139,9 +134,7 @@ function apiNote(o: Opts) {
         return "";
     }
 
-    const sampled = Object.values(o.api.samples).filter(
-        (s) => !("skipped" in s)
-    ).length;
+    const sampled = Object.values(o.api.samples).filter((s) => !("skipped" in s)).length;
     const total = o.api.endpoints.length;
 
     const root = apiRoot(o);
@@ -154,24 +147,55 @@ function apiNote(o: Opts) {
     ${root}/config.ts  base url and token, yours to edit and kept on regen
     `) +
         chalk.yellowBright(
-            `\nNote: api/samples.json contains real response bodies captured from the\nAPI. Read it before committing if that endpoint returns personal data.\n`
+            `\nNote: api/samples.json contains real response bodies captured from the\nAPI. Read it before committing if that endpoint returns personal data.\n`,
         )
     );
 }
 
 //Commands are printed for whichever package manager launched us, so someone
 //who typed "npm create tsreact" is not told to run pnpm. See pm.ts.
+//Every branch below prints its own command block, so the one place a step can
+//be added to all of them is the string they all open with. That is what this
+//wrapper is for: the husky note has to reach every template, and threading it
+//through six call sites is how notes drift.
 export function steps(name: string, o: Opts) {
+    stepsFor(name, o);
+
+    if (o.husky) {
+        console.log(huskyNote());
+    }
+}
+
+//The order of "git init" and the install is not cosmetic. husky installs the
+//hook from its "prepare" script, package managers run prepare as part of
+//install, and husky exits 0 with a message when there is no repository - so
+//installing into a directory that is not yet a repo leaves a .husky/pre-commit
+//that never runs and nothing that looks like an error. Hence the git init line
+//above the install, and the recovery command in the note.
+function huskyNote() {
     const pm = detectPm();
 
-    //name is the path relative to cwd, so "." means we scaffolded in place
-    const cd = name === "." ? "" : `\n    cd ${name}`;
+    return (
+        chalk.yellowBright(`\nThe pre-commit hook:`) +
+        chalk.greenBright(`
+    it formats staged files with oxfmt and then runs the linter.
+    "${pm.run("prepare")}" installs it, and the install above does that
+    for you - but only inside a git repository, which is why "git init"
+    comes first. Already installed? Run that command now.
+    `)
+    );
+}
+
+function stepsFor(name: string, o: Opts) {
+    const pm = detectPm();
+
+    //name is the path relative to cwd, so "." means we scaffolded in place.
+    //With --husky the repository has to exist before the install runs; see
+    //huskyNote above for what happens when it does not.
+    const cd = (name === "." ? "" : `\n    cd ${name}`) + (o.husky ? `\n    git init` : "");
 
     //what Chrome is pointed at, from wherever the user is standing
-    const unpacked =
-        name === "."
-            ? "apps/extension/public"
-            : `${name}/apps/extension/public`;
+    const unpacked = name === "." ? "apps/extension/public" : `${name}/apps/extension/public`;
 
     if (o.template === "extension") {
         const msg =
@@ -189,7 +213,7 @@ export function steps(name: string, o: Opts) {
     3. "Load unpacked" and select ${unpacked}
     `) +
             chalk.yellowBright(
-                `\nNote: select that public/ folder, not the project root - the manifest\nlives there.\n`
+                `\nNote: select that public/ folder, not the project root - the manifest\nlives there.\n`,
             );
 
         console.log(msg);
@@ -205,10 +229,10 @@ export function steps(name: string, o: Opts) {
     `) +
             apiNote(o) +
             chalk.yellowBright(
-                `\nNote: the dependency versions are pinned to Expo SDK 57. After an SDK\nbump, run "expo install --fix" inside apps/mobile to realign them.\n`
+                `\nNote: the dependency versions are pinned to Expo SDK 57. After an SDK\nbump, run "expo install --fix" inside apps/mobile to realign them.\n`,
             ) +
             chalk.yellowBright(
-                `\nThe .npmrc sets node-linker=hoisted, which Metro needs - it cannot\nresolve pnpm's default layout. Do not remove it.\n`
+                `\nThe .npmrc sets node-linker=hoisted, which Metro needs - it cannot\nresolve pnpm's default layout. Do not remove it.\n`,
             );
 
         console.log(msg);
@@ -231,7 +255,7 @@ export function steps(name: string, o: Opts) {
     apps/web/public/ over https to exercise it.
     `) +
             chalk.yellowBright(
-                `\nThe icons in apps/web/public/ are generated from the app name - replace\nthem with your own artwork when you have some.\n`
+                `\nThe icons in apps/web/public/ are generated from the app name - replace\nthem with your own artwork when you have some.\n`,
             );
 
         console.log(msg);

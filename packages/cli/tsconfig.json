@@ -34,7 +34,9 @@
     // "paths": {},                                      /* Specify a set of entries that re-map imports to additional lookup locations. */
     // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
     // "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
-    // "types": [],                                      /* Specify type package names to be included without being referenced in a source file. */
+    "types": [
+      "node"
+    ] /* Specify type package names to be included without being referenced in a source file. Naming it is not optional: left unset, the automatic sweep of every typeRoot finds the stray @types/node@18.11.5 in the root node_modules before this package's own ^26.1.2, and every node global then fails to resolve. The other three packages already declare this. */,
     // "allowUmdGlobalAccess": true,                     /* Allow accessing UMD globals from modules. */
     // "moduleSuffixes": [],                             /* List of file name suffixes to search when resolving a module. */
     // "resolveJsonModule": true,                        /* Enable importing .json files. */

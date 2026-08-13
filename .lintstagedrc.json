@@ -1,3 +1,4 @@
 {
-  "**/*": "pnpm exec prettier --write --ignore-unknown"
+  "packages/*/src/**/*.ts": "oxfmt",
+  "*.mjs": "oxfmt"
 }

@@ -7,15 +7,7 @@
 //path these files are *emitted to* inside the scaffolded app, and having both
 //meanings share a name is how you end up editing the wrong one.
 
-export const METHODS = [
-    "get",
-    "post",
-    "put",
-    "patch",
-    "delete",
-    "head",
-    "options",
-] as const;
+export const METHODS = ["get", "post", "put", "patch", "delete", "head", "options"] as const;
 
 export type Method = (typeof METHODS)[number];
 
@@ -107,7 +99,7 @@ export function origins(spec: ApiSpec): string[] {
 //difference between "resolved to empty" and "never resolved"
 export function substitute(text: string, vars: Record<string, string>) {
     return text.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (whole, key: string) =>
-        key in vars ? vars[key] : whole
+        key in vars ? vars[key] : whole,
     );
 }
 

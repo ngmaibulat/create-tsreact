@@ -1,5 +1,6 @@
-import type { Files, Opts } from "../cli.js";
 import icon from "@tsreact/png/icon";
+
+import type { Files, Opts } from "../cli.js";
 import genIconSvg from "../genIconSvg.js";
 import genSwTs from "../genSwTs.js";
 import genSwTsConfig from "../genSwTsConfig.js";

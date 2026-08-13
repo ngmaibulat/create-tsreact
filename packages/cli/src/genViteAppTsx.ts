@@ -1,5 +1,6 @@
-import type { Opts } from "./cli.js";
 import { hasParams, queries } from "@tsreact/bruno/emit";
+
+import type { Opts } from "./cli.js";
 
 //Tailwind is tree-shaken against the markup, so the greeting has to actually
 //use classes or the template looks like tailwind did nothing. daisyUI adds a
@@ -32,9 +33,7 @@ function example(o: Opts) {
 
     const name = first.name;
     const args = hasParams(first)
-        ? `{ /* ${name[0].toUpperCase()}${name.slice(
-              1
-          )}Params, see ./api/types */ }`
+        ? `{ /* ${name[0].toUpperCase()}${name.slice(1)}Params, see ./api/types */ }`
         : "";
 
     return `//Your API is wired up. To read from it:

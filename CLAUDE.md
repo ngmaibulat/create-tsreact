@@ -10,10 +10,16 @@ pnpm build            # esbuild -> packages/cli/bin/index.js (single bundled ESM
 pnpm build-watch      # same, with --watch
 pnpm test             # build, then node smoke.mjs (scaffolds every template for real)
 pnpm typecheck        # tsc --noEmit over each package in turn
-pnpm lint             # eslint packages/*/src
-pnpm format:check     # prettier packages/*/src --check
-pnpm format:fix       # prettier packages/*/src --write
+pnpm lint             # oxlint, from the root, over everything not ignored
+pnpm format:check     # oxfmt --check, over each package's src plus scripts/ and smoke.mjs
+pnpm format:fix       # same, writing
 ```
+
+`lint` takes no path: oxlint walks the working directory and honours
+`.oxlintrc.json`'s `ignorePatterns`, so it covers `scripts/release.mjs` and
+`packages/cli/smoke.mjs` as well — neither of which the old `eslint packages/*/src`
+ever saw. `format:*` does take paths, and spells every one of them out; see the
+oxfmt note under "Things that will silently break" for why a glob is not enough.
 
 The repo is a pnpm workspace of four packages:
 
@@ -39,20 +45,35 @@ a package resolves the stray `@types/node@18.11.5` sitting in the root
 trap as the `typescript` entry in "Out of date" below: pnpm's isolated linker does
 not hand a package its neighbours' dependencies.
 
-**A new package needs four touches**, none of them compile-checked: the
+**Declaring the dependency is only half of it — every `tsconfig.json` must also
+say `"types": ["node"]`.** With `types` unset, TypeScript sweeps in every
+`@types/*` package it can find across all typeRoots, and the root's stray 18.11.5
+is one of them. `packages/cli` was the one config that left it unset, which was
+survivable until the TypeScript 7 bump and then wasn't: the whole package failed
+with `Cannot find name 'process'` / `'Buffer'` / `'console'` on every file,
+including the sources it pulls in from the other three packages. Naming `node`
+pins the lookup to the package's own copy. It is safe to opt out of the automatic
+sweep here because nothing in this repo relies on an ambient `@types` package.
+
+**A new package needs five touches**, none of them compile-checked: the
 `package.json` (private, `exports` at `.ts`, `@types/node`), a `tsconfig.json`
-copied from an existing one, a `workspace:*` line in `packages/cli`'s
-devDependencies, and a `tsc --noEmit -p` clause in the root `typecheck` script.
-`lint` and `format` already glob `packages/*/src`.
+copied from an existing one (`"types": ["node"]` included), a `workspace:*` line
+in `packages/cli`'s devDependencies, a `tsc --noEmit -p` clause in the root
+`typecheck` script, and its `src` appended to both `format:*` scripts. `lint`
+needs nothing — oxlint takes no path and picks the package up on its own.
 
 **`CliError` lives in `packages/bruno/src/error.ts`**, not in the CLI. `parse.ts`,
 `collection.ts` and `sample.ts` all throw it, and importing it back out of the
 CLI would make the two packages mutually dependent. `cli.ts` imports and
 re-exports it so every call site there still says `from "./cli.js"`.
 
-`pnpm test` runs `smoke.mjs`: it scaffolds every template (plus one `--tailwind --daisyui` combination) into a temp dir, runs a real `pnpm install`, `pnpm -r run typecheck` and `pnpm -r run build` in each, and asserts on what lands on disk (files emitted, JSON validity, production React, classic-script output for the extension and the PWA's `sw.js`, DaisyUI classes reaching the compiled CSS, build output gitignored). It needs network access for the installs and takes ~5min. Every generated app is a pnpm workspace, so the row fields below are all relative to that root. There is no other test runner and no CI (`.github/` does not exist).
+`pnpm test` runs `smoke.mjs`: it scaffolds every template (plus one `--tailwind --daisyui --husky` combination) into a temp dir, runs a real `pnpm install`, `pnpm -r run typecheck` and `pnpm -r run build` in each, and asserts on what lands on disk (files emitted, JSON validity, production React, classic-script output for the extension and the PWA's `sw.js`, DaisyUI classes reaching the compiled CSS, build output gitignored).
 
-A row may set three optional fields. `outDir` (default `public`) is where `outputs` are looked for and is also what the gitignore-leak check uses — `vite-spa` sets `dist`, and `fastify-react` sets `.` and gives full paths because it has one output directory per workspace. `jsonFiles` names JSON below the top level, which the `readdirSync` sweep cannot see. `resolveOnly` and `skipBuild` are the two ways a row opts out of the full run; see below.
+It needs network access for the installs and takes ~5min. Every generated app is a pnpm workspace, so the row fields below are all relative to that root. There is no other test runner and no CI (`.github/` does not exist).
+
+**Every row also runs the scaffold's own `lint` and `format:check`** (`quality()`), which is the assertion that a brand new app is clean before anyone touches it. Those two gates are why the generated sources have to be written in oxfmt's style, and they are what caught the two lint false positives and the six formatting differences when the esbuild lane moved off prettier. The expo row runs them too, after its real install.
+
+A row may set four optional fields. `husky` turns on the assertions for the half of `--husky` no preset emits — the `prepare` script and the two devDependencies in the root manifest. `outDir` (default `public`) is where `outputs` are looked for and is also what the gitignore-leak check uses — `vite-spa` sets `dist`, and `fastify-react` sets `.` and gives full paths because it has one output directory per workspace. `jsonFiles` names JSON below the top level, which the `readdirSync` sweep cannot see. `resolveOnly` and `skipBuild` are the two ways a row opts out of the full run; see below.
 
 The `# api` section at the end is **hermetic** — it spawns its own fixture API and needs no external service. That matters more than usual, because the feature is _about_ executing real requests and a test reaching the internet would fail for reasons unrelated to the code. It covers the inference cases a declared-types approach could not know (an optional key, a `| null` union, an empty array merging with a populated one), that mutations are not sampled by default, that a `~disabled` header and `Authorization` never reach the emitted client, and — with the fixture killed — that `create-tsreact api` regenerates byte-identically offline while leaving a hand-edited `config.ts` alone.
 
@@ -94,13 +115,13 @@ export default function genFoo(name?: string) {
 }
 ```
 
-The seven files in `src/presets/` map output paths to those functions. **Presets must stay thin map-builders** — if they start holding template strings of their own, there are three different places a generated file can be defined. `pwa.ts` spreads `react(o)` and adds four entries, which is the intended way to express "template X is template Y plus some files". `src/apiFiles.ts` is the same idea in the other direction: a map-builder every preset spreads, returning nothing at all unless `o.api` is set. It lives outside `src/presets/` so that directory stays one file per template.
+The seven files in `src/presets/` map output paths to those functions. **Presets must stay thin map-builders** — if they start holding template strings of their own, there are three different places a generated file can be defined. `pwa.ts` spreads `react(o)` and adds four entries, which is the intended way to express "template X is template Y plus some files". `src/apiFiles.ts` is the same idea in the other direction: a map-builder every preset spreads, returning nothing at all unless `o.api` is set. It lives outside `src/presets/` so that directory stays one file per template. `src/huskyFiles.ts` has exactly the same shape for `--husky`, and exists for the same reason — a flag that adds files to all seven templates should not mean seven conditionals.
 
 `fastifyReact.ts` is the only preset that writes into two package roots (`apps/server/…` and `apps/web/…`). It needs no special handling — `writeTree` derives parent directories from the map keys — and it reuses every `genVite*` generator rather than duplicating them, each of which branches on `o.template` where the workspace child differs.
 
 **Adding a generated file** is two touches: create `src/genX.ts`, then add one `"path/to/file": genX(o)` line to the relevant preset. `index.ts` never needs to change — parent directories are derived from the map keys.
 
-**Generator signatures follow one rule:** a generator takes `(name: string)` if its output depends only on the app name, and `(o: Opts)` if it branches on the template or a flag. Nothing takes both. Generators whose output differs per template branch on `o.template` rather than being duplicated (`genTsConfig`, `genGitIgnore`, `genIndexHtml`, `genAppTsx`, `genStylesCss`, `genEnvDts`) — except where two templates share nothing at all, which is why expo has its own `genExpoTsConfig` / `genExpoGitIgnore`, and why the vite, next and fastify templates have their own `gen*PackageJson` and `gen*TsConfig` rather than another branch inside the esbuild ones.
+**Generator signatures follow one rule:** a generator takes `(name: string)` if its output depends only on the app name, and `(o: Opts)` if it branches on the template or a flag. Nothing takes both. Generators whose output differs per template branch on `o.template` rather than being duplicated (`genTsConfig`, `genGitIgnore`, `genIndexHtml`, `genAppTsx`, `genStylesCss`, `genEnvDts`, and both oxc configs — `genOxlintrc` turns off one rule each for expo and pwa, `genOxfmtrc` emits `sortTailwindcss` only with tailwind) — except where two templates share nothing at all, which is why expo has its own `genExpoTsConfig` / `genExpoGitIgnore`, and why the vite, next and fastify templates have their own `gen*PackageJson` and `gen*TsConfig` rather than another branch inside the esbuild ones.
 
 `genEnvDts` shows the boundary: the vite templates need `/// <reference types="vite/client" />` where the esbuild ones need `declare module "*.css";` — one line either way, so it branches. `genViteTsConfig` does not, because almost nothing in it is shared.
 
@@ -110,11 +131,15 @@ The parsed collection is hung off `Opts` as `o.api?: ApiSpec`, which is why `gen
 
 ### Adding a template
 
-`TEMPLATES` in `cli.ts` is the source of truth and `Template` is derived from it (`typeof TEMPLATES[number]`), so adding a member there is step one. Four things then fail to compile — `DESCRIPTIONS` and `APPS` (`cli.ts`), `PRESETS` (`index.ts`), and `OUTPUT`/`TAILWIND_OUTPUT` (`genGitIgnore.ts`) — plus the `DESCRIPTIONS` map at the foot of `genRootPackageJson.ts`. The rest drift silently and must be worked by hand: a preset in `src/presets/` (spreading `apiFiles(o)` if the template should support `--api`), the `steps()` branch in `help.ts`, the `templates` array in `smoke.mjs`, the QueryClientProvider in whatever the template's root component is, and the README table plus a `### The X template` section. `help()`'s option line and template list render from `TEMPLATES`/`DESCRIPTIONS`, so those two do not drift.
+`TEMPLATES` in `cli.ts` is the source of truth and `Template` is derived from it (`typeof TEMPLATES[number]`), so adding a member there is step one. Four things then fail to compile — `DESCRIPTIONS` and `APPS` (`cli.ts`), `PRESETS` (`index.ts`), and `OUTPUT`/`TAILWIND_OUTPUT` (`genGitIgnore.ts`) — plus the `DESCRIPTIONS` map at the foot of `genRootPackageJson.ts`. The rest drift silently and must be worked by hand: a preset in `src/presets/` (spreading `apiFiles(o)` if the template should support `--api`, and `huskyFiles(o)` — every preset does, and a template that forgets it accepts `--husky` and then emits no hook), the `steps()` branch in `help.ts`, the `templates` array in `smoke.mjs`, the QueryClientProvider in whatever the template's root component is, and the README table plus a `### The X template` section.
+
+**The new template's generated sources have to be written in oxfmt's style**, because the smoke suite runs `lint` and `format:check` on every scaffold and both are gates. That means double quotes, `function f() {` on one line, semicolons, trailing commas on anything that spans lines, and Tailwind class lists in `sortTailwindcss` order. The quickest way to get it right is to scaffold once, run `format:fix`, and copy the result back into the generator — which is exactly how the four esbuild-lane templates were converted, and the diff was not small. `help()`'s option line and template list render from `TEMPLATES`/`DESCRIPTIONS`, so those two do not drift.
 
 `OUTPUT` and `TAILWIND_OUTPUT` are keyed on the full `Template` union, including `expo`, whose row is empty because it uses `genExpoGitIgnore.ts` instead. That is on purpose: it makes those two maps the compile-time guard that every new template declares its build output. There used to be a `BrowserTemplate = Exclude<Template, "expo">` alias with an unchecked `o.template as BrowserTemplate` cast at the top of `genGitIgnore`; it was removed when the non-esbuild templates arrived, because a cast that silently yields `undefined` is exactly the failure the maps exist to prevent.
 
-`TAILWIND_ALWAYS` in `cli.ts` forces `o.tailwind` true for the templates whose bundler compiles Tailwind, so `--tailwind` is a no-op there rather than an error, and no generator needs a per-template special case. Two places must stay in step with it, and neither is compile-checked: `tailwindNote` in `help.ts` (which would otherwise advertise a `tw` script those templates do not have) and the `standalone` branch in `genStylesCss.ts` (whose `@source` paths assume `public/index.html`).
+`TAILWIND_ALWAYS` in `cli.ts` forces `o.tailwind` true for the templates whose bundler compiles Tailwind, so `--tailwind` is a no-op there rather than an error, and no generator needs a per-template special case.
+
+**`standaloneTailwind(o)` in `cli.ts` is the derived half of that**, and the only thing anything else should ask. It is `o.tailwind && !TAILWIND_ALWAYS.includes(o.template)` — true exactly for the templates where `@tailwindcss/cli` runs as its own watcher — and it is what decides the `tw` script (`genRootPackageJson`), the `predev` hook (`genNpmrc`), the `@source` paths (`genStylesCss`) and whether `steps()` advertises the watcher (`tailwindNote` in `help.ts`). All four used to spell out `react || pwa || extension` by hand, and one of them had drifted into a stale `!oxc` that meant "not a template with oxlint". Expo cannot reach the true branch: `parseArgs` rejects `--tailwind` there outright.
 
 `APPS` in `cli.ts` is the other compile-checked map: it declares the directories under `apps/` a template creates, and its first entry is the primary app — the one `--api` writes its client into, and the one `appDir()` returns.
 
@@ -188,7 +213,7 @@ And the four that are not esbuild at all:
 | Bundler  | **metro**                     | **vite 8** (rolldown is its dependency), out `dist/` | **Turbopack**, out `.next/`                           | **rolldown** for the server, vite for the web                    |
 | tsconfig | `extends: expo/tsconfig.base` | `types: ["vite/client"]`, bundler resolution         | `jsx: react-jsx`, `plugins: [{name:"next"}]`, `paths` | server is `NodeNext` with no DOM; web reuses vite-spa's          |
 | Styling  | StyleSheet objects            | `@tailwindcss/vite`                                  | `@tailwindcss/postcss`                                | `@tailwindcss/vite`                                              |
-| Lint/fmt | prettier                      | oxlint + oxfmt                                       | oxlint + oxfmt                                        | oxlint + oxfmt, once from the root                               |
+| Lint/fmt | oxlint + oxfmt, on `App.tsx` + `index.ts` (no `src/`) | oxlint + oxfmt                      | oxlint + oxfmt                                        | oxlint + oxfmt, once from the root                               |
 
 The README's "Building" section shows the _react template's_ build command, not this repo's.
 
@@ -222,8 +247,13 @@ The expo template is the only one that shares nothing with the rest: no esbuild,
 - **The `?? "file:./local.db"` defaults in `src/db/index.ts` and `drizzle.config.ts`.** Without them a fresh scaffold cannot run `db:push` or `dev` until the user writes a `.env`, which turns a working template into a broken one. The two must agree, or `db:push` writes to a different database than the page reads.
 - **`server.proxy` in `apps/web/vite.config.ts`.** Dropping it means the client asks Vite for `/api/...` and gets the SPA fallback HTML, which surfaces as a JSON parse error rather than as a missing proxy.
 - **`external` in `apps/server/rolldown.config.ts`.** Fastify resolves plugin metadata by identity at registration time, so inlining it fails at runtime rather than at build. Runtime deps stay external; the bundle exists to collapse `src/` into one file, not to vendor `node_modules`.
-- **The oxc format scripts pointing at `src/`, not `.`.** oxfmt reads `.editorconfig`, which sets `indent_size = 2` for JSON — so formatting the project root would rewrite every generated 4-space JSON file on the first `pnpm format:fix`. This mirrors `prettier src --check` in the other templates. For the same reason the monorepo spells out both workspace paths: **oxfmt does not expand globs itself**, so `"apps/*/src"` only works where a shell expands it first, which pnpm scripts do on posix and cmd.exe does not.
-- **`src/api` in `.oxfmtrc.json`'s `ignorePatterns`.** Those files are emitted from the Bruno collection in prettier's style and shared with the esbuild templates, whose regeneration output is asserted byte-identically. Formatting them is churn that comes straight back on the next `api:gen`.
+- **The oxc format scripts pointing at `src/`, not `.`.** oxfmt reads `.editorconfig`, which sets `indent_size = 2` for JSON — so formatting the project root would rewrite every generated 4-space JSON file on the first `pnpm format:fix`. For the same reason the monorepo spells out both workspace paths: **oxfmt does not expand globs itself**, so `"apps/*/src"` only works where a shell expands it first, which pnpm scripts do on posix and cmd.exe does not. (`oxfmt --help` advertises glob support; a quoted `packages/*/src` still resolves to nothing.)
+- **`--husky` needs `git init` before the install.** husky installs the hook from the generated `prepare` script, package managers run `prepare` as part of install, and husky 9 **exits 0** with `.git can't be found` outside a repository. Install first and you get a `.husky/pre-commit` that never runs and no error anywhere. `steps()` therefore prints `git init` above the install line, which it does by folding it into the shared `cd` string — the one place every template's command block passes through.
+- **`src/api` in `.oxfmtrc.json`'s `ignorePatterns`.** Those files are emitted from the Bruno collection in prettier's style, and their regeneration output is asserted byte-identically. Formatting them is churn that comes straight back on the next `api:gen`. The second pattern is `apps/*/src/api`, not `apps/web/src/api`: the client follows the primary app, so it is `apps/extension/…` for the extension template and `apps/mobile/…` for expo.
+- **`--no-error-on-unmatched-pattern` in the generated `.lintstagedrc.json`.** oxfmt exits **2** when every path it was handed is excluded by an ignore rule — "Expected at least one target file" — and lint-staged hands it exactly the staged files. So a commit containing nothing but a regenerated `src/api` would fail, with a message about target files rather than about anything the user did. `pnpm api:gen` produces precisely that commit.
+- **expo's format paths naming `App.tsx` and `index.ts` instead of a directory.** Its app has no `src/`, so `apps/mobile/src` is a path that does not exist and oxfmt exits 2 on it, and `oxfmt apps/mobile` would reformat the generated 4-space `app.json`/`tsconfig.json` to `.editorconfig`'s 2. `genRootPackageJson` and `genLintStagedrc` both carry the exception and must agree.
+- **`react/style-prop-object` off for expo, `unicorn/require-module-specifiers` off for pwa.** Both are false positives that would otherwise make a brand new app lint dirty: expo-status-bar's `style` prop takes a string, and `sw.ts` ends in `export {}` because `isolatedModules` refuses a file with no import or export (TS1208).
+- **Generated sources must already be in oxfmt's style.** `format:check` is a smoke gate for every template, so a generator emitting single quotes, an Allman brace or a line over 100 columns fails the suite. The subtle one is conditional width: the extension's popup button is 69 columns without `--daisyui` and 104 with it, so `genPopupTsx` emits it pre-broken only in the daisy case — and the formatter would pull the broken form back onto one line in the other. A long app name can still push a generated line past 100; that is the one case where a fresh scaffold may need a `format:fix`.
 - **`react/react-in-jsx-scope` being off in `.oxlintrc.json`.** It is on by default with oxlint's react plugin and predates the automatic runtime, so with `"jsx": "react-jsx"` a freshly scaffolded app lints dirty out of the box. Note also that oxlint's `plugins` array _overwrites_ the default set rather than adding to it — dropping `typescript`/`unicorn`/`oxc` from that list silently disables their rules.
 - **`nodeLinker: hoisted` must be in `pnpm-workspace.yaml`, not `.npmrc`.** pnpm 11 ignores `node-linker` in `.npmrc` outright — `pnpm config get node-linker` reports `undefined` — and the failure is silent: the install succeeds, `node_modules` stays symlinked, and metro then cannot resolve packages that are plainly installed. The expo smoke row asserts the _effect_ (expo at the top of `node_modules`) rather than the setting, because the spelling that does nothing looks identical to the one that works.
 - **`allowBuilds` in `pnpm-workspace.yaml`.** pnpm 10+ refuses to run a dependency's postinstall unless it is named, and the symptom is indirect — the package installs, then its binary is missing at build time. `esbuild` is listed for every template because it also arrives transitively (drizzle-kit and tsx each bundle one); `@parcel/watcher` is added with the standalone tailwind toolchain. Note the key is `allowBuilds` on pnpm 11 — `onlyBuiltDependencies` is the pnpm 10 spelling and is silently ignored, with pnpm rewriting the file to add an `allowBuilds` stub rather than erroring.
@@ -237,13 +267,17 @@ The expo template is the only one that shares nothing with the rest: no esbuild,
 
 The esbuild bundle is tracked in git (`.gitignore` covers `dist`, not `bin`) because it's the published `bin` target. `.husky/pre-commit` runs `pnpm run build`, `git add packages/cli/bin/index.js`, `pnpm exec lint-staged`, then `pnpm run lint`.
 
-Consequences: never hand-edit `bin/index.js` — the hook overwrites it. `bin/**` is in `.prettierignore` so the bundle isn't reformatted. Committing a `src/` change is sufficient to ship the rebuilt bundle.
+Consequences: never hand-edit `bin/index.js` — the hook overwrites it. `packages/cli/bin` is in `ignorePatterns` in **both** `.oxfmtrc.json` and `.oxlintrc.json` so the bundle is neither reformatted nor linted. Committing a `src/` change is sufficient to ship the rebuilt bundle.
+
+Both of those entries are load-bearing for a reason that is easy to miss. For oxfmt: the hook runs `git add packages/cli/bin/index.js` _before_ `lint-staged`, so the bundle is always staged at the moment formatting runs. For oxlint: `lint` takes no path and walks the whole tree, and oxlint's other source of exclusions is `.gitignore` — which deliberately does not cover `bin`.
 
 ## Conventions
 
 - Pure ESM (`"type": "module"`). Relative imports must carry explicit `.js` extensions even though sources are `.ts` (NodeNext resolution) — e.g. `import genAppTsx from "./genAppTsx.js"`.
-- ESLint uses the legacy `.eslintrc.json` format (ESLint 8), not flat config.
-- `.prettierrc.json` is `{}`. Prettier reads `.editorconfig` by default and an empty `.prettierrc.json` overrides nothing, so `.editorconfig`'s `indent_size = 4` wins for `*.ts` — which is why sources are 4-space and lint-staged never reformats them to 2. Run `pnpm format:fix` rather than hand-formatting.
+- Linting and formatting are `oxlint` and `oxfmt` — the same pair the modern templates generate, and the reason `.oxlintrc.json` here is a near-copy of `genOxlintrc.ts`'s output. It differs in two ways: no `react` plugin (nothing here is JSX) and `env.node` rather than `env.browser`.
+- `unicorn/no-array-sort` is the one rule turned off. It fires on `[...seen].sort()` and on `readdirSync().filter().sort()`, neither of which mutates anything a caller can see, and its suggested `toSorted()` is not in the `ES2022` lib these tsconfigs set — so taking its advice would not compile.
+- `.oxfmtrc.json` sets no indentation. oxfmt reads `.editorconfig`, so `indent_size = 4` wins for `*.ts` — which is why sources are 4-space and lint-staged never reformats them to 2. It does set `sortImports`, which groups external packages above relative ones. Run `pnpm format:fix` rather than hand-formatting.
+- Formatting is scoped to sources, so Markdown, YAML and the root JSON files are **not** auto-formatted on commit. This file and `README.md` are hand-maintained.
 
 ## Publishing
 
@@ -267,8 +301,10 @@ That same rule is why **`packages/cli/README.md` and `packages/cli/LICENSE` exis
 
 ## Out of date
 
-The repo's own toolchain is still largely 2022-era: `eslint` 8 with legacy config, `prettier` 2, and `husky` 8 with the deprecated `husky install` + `husky.sh` shim.
+Nothing, as of the oxc migration — the root toolchain is now the one the modern templates generate. `eslint` 8 with legacy config, `@typescript-eslint` 5, and `prettier` 2 are gone in favour of `oxlint` + `oxfmt`; `husky` is 9 (no `husky install`, no `husky.sh` shim) and `lint-staged` is 17; `typescript` is `^7.0.2`.
 
-There is also a stray `@types/node@18.11.5` in the root `node_modules` that nothing declares — it arrives transitively. Any package without its own `@types/node` resolves _that_ one, so all four declare `^26.1.2`; see the package table above for what happens when one doesn't.
+`@typescript-eslint` 5 is what made this urgent rather than cosmetic: it supports `<5.2.0`, so it printed an unsupported-version banner on every `pnpm lint`, and it was never going to support 7.
 
-Two of the old entries are gone. `esbuild` was 0.15, whose `bin/esbuild` is the raw native binary — pnpm shims it as JS and it fails with a `SyntaxError` full of ELF bytes; it is now `^0.28.1`, matching what the templates generate. And `typescript` is now a real devDependency rather than a 4.8.4 that happened to arrive through `tsutils`, because pnpm's isolated linker does not expose transitive dependencies.
+Two older entries are also long gone. `esbuild` was 0.15, whose `bin/esbuild` is the raw native binary — pnpm shims it as JS and it fails with a `SyntaxError` full of ELF bytes; it is now `^0.28.1`, matching what the templates generate. And `typescript` is a real devDependency rather than a 4.8.4 that happened to arrive through `tsutils`, because pnpm's isolated linker does not expose transitive dependencies.
+
+**The one artefact that remains is not a dependency at all.** The root `node_modules` still holds `@types/node@18.11.5`, `@types/semver`, `@types/json-schema`, `@eslint/*` and friends as _plain directories_ next to a leftover `node_modules/.package-lock.json` — the residue of an npm install predating the move to pnpm. pnpm never owned them, so no `pnpm install` will ever remove them, and `pnpm why @types/node` reports only the declared `26.1.2`. A fresh clone has none of it. It matters only to a `tsconfig.json` that omits `"types"`, which is the trap described in the package table above; `rm -rf node_modules && pnpm install` clears it for good.

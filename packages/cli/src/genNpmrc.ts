@@ -1,3 +1,4 @@
+import { standaloneTailwind } from "./cli.js";
 import type { Opts } from "./cli.js";
 
 //Only one setting still belongs in .npmrc, and only for older pnpm.
@@ -14,13 +15,7 @@ import type { Opts } from "./cli.js";
 //
 //Returns "" when it does not apply; the presets skip the file in that case.
 export default function genNpmrc(o: Opts) {
-    const predev =
-        o.tailwind &&
-        (o.template === "react" ||
-            o.template === "pwa" ||
-            o.template === "extension");
-
-    if (!predev) {
+    if (!standaloneTailwind(o)) {
         return "";
     }
 

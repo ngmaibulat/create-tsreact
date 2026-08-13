@@ -96,10 +96,7 @@ function renderObject(obj: Obj, indent: string): string {
     const inner = indent + "    ";
     const lines = [...obj.fields].map(([key, field]) => {
         const optional = field.seen < obj.total ? "?" : "";
-        return `${inner}${ident(key)}${optional}: ${render(
-            field.shape,
-            inner
-        )};`;
+        return `${inner}${ident(key)}${optional}: ${render(field.shape, inner)};`;
     });
 
     return `{\n${lines.join("\n")}\n${indent}}`;

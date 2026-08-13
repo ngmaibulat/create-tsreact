@@ -1,5 +1,5 @@
-import type { Files, Opts } from "../cli.js";
 import apiFiles from "../apiFiles.js";
+import type { Files, Opts } from "../cli.js";
 import genDbIndex from "../genDbIndex.js";
 import genDbSchema from "../genDbSchema.js";
 import genDrizzleConfig from "../genDrizzleConfig.js";
@@ -9,8 +9,8 @@ import genGitIgnore from "../genGitIgnore.js";
 import genNextConfig from "../genNextConfig.js";
 import genNextEnvDts from "../genNextEnvDts.js";
 import genNextLayoutTsx from "../genNextLayoutTsx.js";
-import genNextPageTsx from "../genNextPageTsx.js";
 import genNextPkgJson from "../genNextPackageJson.js";
+import genNextPageTsx from "../genNextPageTsx.js";
 import genNextTsConfig from "../genNextTsConfig.js";
 import genOxfmtrc from "../genOxfmtrc.js";
 import genOxlintrc from "../genOxlintrc.js";
@@ -19,6 +19,7 @@ import genPostcssConfig from "../genPostcssConfig.js";
 import genProvidersTsx from "../genProvidersTsx.js";
 import genRootPkgJson from "../genRootPackageJson.js";
 import genStylesCss from "../genStylesCss.js";
+import huskyFiles from "../huskyFiles.js";
 
 //Everything Next owns lives in apps/web, including drizzle.config.ts and
 //.env.example: drizzle-kit resolves its config relative to the directory it
@@ -31,12 +32,13 @@ import genStylesCss from "../genStylesCss.js";
 export default function nextDrizzle(o: Opts): Files {
     const files: Files = {
         ...apiFiles(o),
+        ...huskyFiles(o),
         "package.json": genRootPkgJson(o),
         "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
         ".gitignore": genGitIgnore(o),
         ".editorconfig": genEditorConfig(),
-        ".oxlintrc.json": genOxlintrc(),
-        ".oxfmtrc.json": genOxfmtrc(),
+        ".oxlintrc.json": genOxlintrc(o),
+        ".oxfmtrc.json": genOxfmtrc(o),
 
         "apps/web/package.json": genNextPkgJson(o),
         "apps/web/tsconfig.json": genNextTsConfig(),
