@@ -158,8 +158,8 @@ icons, so the template ships four: `icon.svg`, `icon-192.png`, `icon-512.png`
 and a maskable `icon-maskable-512.png` for Android launchers that crop to a
 shape. That is everything Chrome's installability check asks for.
 
-The PNGs are _generated_, not copied — `src/png.ts` is a ~60-line PNG encoder
-built on `node:zlib`, and `src/genIconPng.ts` draws a mirrored identicon whose
+The PNGs are _generated_, not copied — `packages/png/src/png.ts` is a ~60-line
+PNG encoder built on `node:zlib`, and `icon.ts` beside it draws an identicon whose
 colour and pattern come from a hash of the app name. So every app gets a
 distinct icon, the same name always produces the same icon, and the repo still
 contains no binary assets. Replace them with real artwork when you have some.

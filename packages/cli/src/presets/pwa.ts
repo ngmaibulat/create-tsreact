@@ -1,5 +1,5 @@
 import type { Files, Opts } from "../cli.js";
-import genIconPng from "../genIconPng.js";
+import icon from "@tsreact/png/icon";
 import genIconSvg from "../genIconSvg.js";
 import genSwTs from "../genSwTs.js";
 import genSwTsConfig from "../genSwTsConfig.js";
@@ -16,9 +16,9 @@ export default function pwa(o: Opts): Files {
         "apps/web/tsconfig.sw.json": genSwTsConfig(),
         "apps/web/public/manifest.webmanifest": genWebManifest(o.name),
         "apps/web/public/icon.svg": genIconSvg(o.name),
-        "apps/web/public/icon-192.png": genIconPng(o.name, 192),
-        "apps/web/public/icon-512.png": genIconPng(o.name, 512),
-        "apps/web/public/icon-maskable-512.png": genIconPng(o.name, 512, true),
+        "apps/web/public/icon-192.png": icon(o.name, 192),
+        "apps/web/public/icon-512.png": icon(o.name, 512),
+        "apps/web/public/icon-maskable-512.png": icon(o.name, 512, true),
         "apps/web/src/sw.ts": genSwTs(),
     };
 }

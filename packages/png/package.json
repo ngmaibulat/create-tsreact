@@ -1,0 +1,15 @@
+{
+  "name": "@tsreact/png",
+  "version": "0.0.0",
+  "description": "PNG encoder and deterministic identicon renderer",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./icon": "./src/icon.ts",
+    "./png": "./src/png.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.1.2"
+  }
+}

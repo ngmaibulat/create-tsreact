@@ -1,18 +1,24 @@
 import { appDir } from "./cli.js";
 import type { Files, Opts } from "./cli.js";
 import { mutations, queries } from "@tsreact/bruno/emit";
+import {
+    clientTs,
+    configTs,
+    indexTs,
+    keysTs,
+    mutationsTs,
+    queriesTs,
+    typesTs,
+} from "@tsreact/bruno/generate";
 import { serialise } from "@tsreact/bruno/sample";
-import genApiClient from "./genApiClient.js";
-import genApiConfig from "./genApiConfig.js";
-import genApiIndex from "./genApiIndex.js";
-import genApiKeys from "./genApiKeys.js";
-import genApiMutations from "./genApiMutations.js";
-import genApiQueries from "./genApiQueries.js";
-import genApiTypes from "./genApiTypes.js";
 
 //A map-builder, not a generator: it returns a slice of the file tree the way
 //a preset does, and each preset spreads it in. Putting it here rather than in
 //src/presets/ keeps that directory to one file per template.
+//
+//This is the whole of the CLI's side of --api. The emitters that produce the
+//file *contents* live in @tsreact/bruno; what stays here is the decision
+//about where each one lands, which is the part that needs appDir and Files.
 //
 //queries.ts and mutations.ts are conditional - a collection of nothing but
 //GETs has no mutations to emit, and an empty module full of unused imports is
@@ -55,10 +61,10 @@ export default function apiFiles(o: Opts, root = apiRoot(o)): Files {
     }
 
     const files: Files = {
-        [preserved(root)]: genApiConfig(o),
-        [`${root}/client.ts`]: genApiClient(o),
-        [`${root}/types.ts`]: genApiTypes(o),
-        [`${root}/index.ts`]: genApiIndex(o),
+        [preserved(root)]: configTs(spec),
+        [`${root}/client.ts`]: clientTs(spec),
+        [`${root}/types.ts`]: typesTs(spec),
+        [`${root}/index.ts`]: indexTs(spec),
         //the collection and its captured responses stay at the workspace root
         //rather than in an app: they are the input to regeneration, and the
         //"tsreact" marker that points at them is in the root manifest
@@ -66,12 +72,12 @@ export default function apiFiles(o: Opts, root = apiRoot(o)): Files {
     };
 
     if (queries(spec).length) {
-        files[`${root}/keys.ts`] = genApiKeys(o);
-        files[`${root}/queries.ts`] = genApiQueries(o);
+        files[`${root}/keys.ts`] = keysTs(spec);
+        files[`${root}/queries.ts`] = queriesTs(spec);
     }
 
     if (mutations(spec).length) {
-        files[`${root}/mutations.ts`] = genApiMutations(o);
+        files[`${root}/mutations.ts`] = mutationsTs(spec);
     }
 
     return files;

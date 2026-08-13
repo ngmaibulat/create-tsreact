@@ -1,14 +1,7 @@
-import type { Opts } from "./cli.js";
-import {
-    banner,
-    hasParams,
-    isQuery,
-    paramsType,
-    pascal,
-} from "@tsreact/bruno/emit";
-import { infer } from "@tsreact/bruno/infer";
-import { substitute } from "@tsreact/bruno/spec";
-import type { ApiSpec, Endpoint } from "@tsreact/bruno/spec";
+import { banner, hasParams, isQuery, paramsType, pascal } from "./emit.js";
+import { infer } from "./infer.js";
+import { substitute } from "./spec.js";
+import type { ApiSpec, Endpoint } from "./spec.js";
 
 //The response types here are the whole point of the feature: they describe
 //what the API actually returned when the collection was executed, not what
@@ -53,8 +46,7 @@ function responseType(spec: ApiSpec, e: Endpoint) {
     return `export type ${pascal(e.name)}Response = ${infer([sample.body])};`;
 }
 
-export default function genApiTypes(o: Opts) {
-    const spec = o.api as ApiSpec;
+export default function typesTs(spec: ApiSpec) {
     const blocks: string[] = [];
 
     for (const e of spec.endpoints) {

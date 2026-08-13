@@ -8,10 +8,11 @@
     "format:check": "prettier packages/*/src --check",
     "format:fix": "prettier packages/*/src --write",
     "lint": "eslint packages/*/src",
-    "typecheck": "tsc --noEmit -p packages/bruno && tsc --noEmit -p packages/cli",
+    "typecheck": "tsc --noEmit -p packages/bruno && tsc --noEmit -p packages/pm && tsc --noEmit -p packages/png && tsc --noEmit -p packages/cli",
     "build": "pnpm --filter create-tsreact run build",
     "build-watch": "pnpm --filter create-tsreact run build-watch",
     "test": "pnpm --filter create-tsreact run test",
+    "release": "pnpm --filter create-tsreact run release",
     "prepare": "husky install"
   },
   "license": "MIT",

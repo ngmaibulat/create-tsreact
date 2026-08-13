@@ -1,4 +1,3 @@
-import type { Opts } from "./cli.js";
 import {
     banner,
     hasParams,
@@ -8,15 +7,14 @@ import {
     pathOf,
     queries,
     queryObject,
-} from "@tsreact/bruno/emit";
-import type { ApiSpec } from "@tsreact/bruno/spec";
+} from "./emit.js";
+import type { ApiSpec } from "./spec.js";
 
 //One queryOptions factory per safe endpoint. Returning options rather than
 //calling useQuery keeps them composable: the caller decides between useQuery,
 //useSuspenseQuery, prefetchQuery or queryClient.ensureQueryData, and can
 //spread in staleTime or enabled without the generator having to guess.
-export default function genApiQueries(o: Opts) {
-    const spec = o.api as ApiSpec;
+export default function queriesTs(spec: ApiSpec) {
     const list = queries(spec);
 
     const needsSegment = list.some((e) => e.path.length > 0);

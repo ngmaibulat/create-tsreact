@@ -1,5 +1,5 @@
 //Chrome's installability check wants raster icons at 192x192 and 512x512, so
-//those are generated (see genIconPng.ts) rather than left to the user. The
+//those are generated (see @tsreact/png) rather than left to the user. The
 //svg is listed first for browsers that will take a vector.
 //
 //The maskable icon is a separate entry rather than "purpose": "any maskable"

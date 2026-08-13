@@ -1,7 +1,7 @@
 import { SAFE, substitute, unresolved } from "./spec.js";
 import type { ApiSpec, Endpoint } from "./spec.js";
 
-//Shared helpers for the genApi* emitters: naming, the split between queries
+//Shared helpers for the emit*.ts modules: naming, the split between queries
 //and mutations, and working out what belongs in config.baseUrl versus in each
 //endpoint's own path.
 

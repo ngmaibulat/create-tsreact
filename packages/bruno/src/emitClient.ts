@@ -1,14 +1,11 @@
-import type { Opts } from "./cli.js";
-import { banner } from "@tsreact/bruno/emit";
-import type { ApiSpec } from "@tsreact/bruno/spec";
+import { banner } from "./emit.js";
+import type { ApiSpec } from "./spec.js";
 
 //The transport every generated query and mutation goes through. Kept
 //deliberately small: one fetch, one error type, one place to add a header.
 //Anything a user wants to change lives in config.ts, which survives
-//regeneration - see genApiConfig.ts.
-export default function genApiClient(o: Opts) {
-    const spec = o.api as ApiSpec;
-
+//regeneration - see emitConfig.ts.
+export default function clientTs(spec: ApiSpec) {
     const tpl = `
 ${banner(spec)}
 

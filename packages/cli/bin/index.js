@@ -908,6 +908,467 @@ function banner(spec) {
 //Response types were inferred from real responses captured in api/samples.json.`;
 }
 
+// ../bruno/src/emitClient.ts
+function clientTs(spec) {
+  const tpl = `
+${banner(spec)}
+
+import { config } from './config';
+
+export class ApiError extends Error {
+    constructor(
+        readonly status: number,
+        readonly body: unknown,
+        readonly url: string
+    ) {
+        super(\`\${status} \${url}\`);
+        this.name = 'ApiError';
+    }
+}
+
+export type RequestOpts = {
+    method: string;
+    path: string;
+    query?: Record<string, string | number | undefined>;
+    body?: unknown;
+    headers?: Record<string, string>;
+    signal?: AbortSignal;
+};
+
+//path parameters go through this rather than straight into the template, so
+//an id containing a slash cannot escape into the url as a new segment
+export function segment(value: string | number) {
+    return encodeURIComponent(String(value));
+}
+
+//an undefined query parameter is dropped rather than sent as "undefined"
+function search(query: RequestOpts['query']) {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(query ?? {})) {
+        if (value !== undefined && value !== '') {
+            params.set(key, String(value));
+        }
+    }
+
+    const text = params.toString();
+    return text ? \`?\${text}\` : '';
+}
+
+export async function request<T>(opts: RequestOpts): Promise<T> {
+    const url = \`\${config.baseUrl}\${opts.path}\${search(opts.query)}\`;
+
+    const headers: Record<string, string> = {
+        Accept: 'application/json',
+        ...opts.headers,
+        ...config.headers,
+    };
+
+    if (config.token) {
+        headers.Authorization = \`Bearer \${config.token}\`;
+    }
+
+    if (opts.body !== undefined) {
+        headers['Content-Type'] ??= 'application/json';
+    }
+
+    const res = await fetch(url, {
+        method: opts.method,
+        headers,
+        body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        signal: opts.signal,
+    });
+
+    //read the body before throwing: an error payload is usually the only
+    //thing that says *why* the call failed
+    const text = await res.text();
+    let parsed: unknown = undefined;
+
+    if (text) {
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            parsed = text;
+        }
+    }
+
+    if (!res.ok) {
+        throw new ApiError(res.status, parsed, url);
+    }
+
+    return parsed as T;
+}
+`;
+  return tpl;
+}
+
+// ../bruno/src/emitConfig.ts
+function configTs(spec) {
+  const base = baseUrl(spec);
+  const note = spec.secrets.length ? `
+//The collection declares these as secrets: ${spec.secrets.join(
+    ", "
+  )}.
+//Bruno keeps their values outside the .bru files, so they are not here either.` : "";
+  const tpl = `
+//Settings for the generated API client.
+//
+//This is the only file under src/api/ that "npm run api:gen" leaves alone -
+//everything else here is overwritten. Edit freely.${note}
+
+export type ApiConfig = {
+    baseUrl: string;
+    //sent as "Authorization: Bearer <token>" when set
+    token?: string;
+    //merged into every request, after the generated per-request headers
+    headers?: Record<string, string>;
+};
+
+export const config: ApiConfig = {
+    baseUrl: ${str(base)},
+    token: undefined,
+};
+`;
+  return tpl;
+}
+
+// ../bruno/src/emitIndex.ts
+function indexTs(spec) {
+  const lines = ["export * from './client';", "export * from './config';"];
+  if (queries(spec).length) {
+    lines.push("export * from './keys';", "export * from './queries';");
+  }
+  if (mutations(spec).length) {
+    lines.push("export * from './mutations';");
+  }
+  lines.push("export type * from './types';");
+  const tpl = `
+${banner(spec)}
+
+${lines.join("\n")}
+`;
+  return tpl;
+}
+
+// ../bruno/src/emitKeys.ts
+function keysTs(spec) {
+  const list2 = queries(spec);
+  const imports = list2.filter(hasParams).map((e) => `${pascal(e.name)}Params`);
+  const types = imports.length ? `
+import type { ${imports.join(", ")} } from './types';
+` : "";
+  const entries2 = list2.map((e) => {
+    const key = str(e.name);
+    const of = hasParams(e) ? `(params: ${pascal(e.name)}Params) => [${key}, params] as const` : `() => [${key}] as const`;
+    return `    ${e.name}: {
+        all: [${key}] as const,
+        of: ${of},
+    },`;
+  });
+  const tpl = `
+${banner(spec)}
+${types}
+export const keys = {
+${entries2.join("\n")}
+};
+`;
+  return tpl;
+}
+
+// ../bruno/src/emitMutations.ts
+function variables(e, name, body3) {
+  if (hasParams(e) && body3) {
+    return {
+      type: `{ params: ${name}Params; body: ${name}Body }`,
+      arg: "vars",
+      params: "vars.params",
+      body: "vars.body"
+    };
+  }
+  if (hasParams(e)) {
+    return {
+      type: `${name}Params`,
+      arg: "params",
+      params: "params",
+      body: void 0
+    };
+  }
+  if (body3) {
+    return {
+      type: `${name}Body`,
+      arg: "body",
+      params: void 0,
+      body: "body"
+    };
+  }
+  return { type: "void", arg: "", params: void 0, body: void 0 };
+}
+function bodyField(expr) {
+  if (!expr) {
+    return "";
+  }
+  return `
+                ${expr === "body" ? "body" : `body: ${expr}`},`;
+}
+function mutationsTs(spec) {
+  const list2 = mutations(spec);
+  const invalidate = queries(spec);
+  const needsSegment = list2.some((e) => e.path.length > 0);
+  const typeImports = [];
+  const fns = list2.map((e) => {
+    const name = pascal(e.name);
+    const hasBody = Boolean(e.body);
+    const vars = variables(e, name, hasBody);
+    typeImports.push(`${name}Response`);
+    if (hasParams(e)) {
+      typeImports.push(`${name}Params`);
+    }
+    if (hasBody) {
+      typeImports.push(`${name}Body`);
+    }
+    const unwrap = vars.params && vars.params !== "params" ? `
+            const params = ${vars.params};
+` : "";
+    const path4 = pathExpression(pathOf(spec, e), e.path);
+    const siblings = invalidate.filter((q) => q.folder === e.folder);
+    const targets = siblings.length ? siblings : invalidate;
+    const scope2 = siblings.length ? `every query in the '${e.folder || "root"}' folder` : "every query in the collection";
+    const onSuccess = targets.length ? `
+        onSuccess: () => {
+            //${scope2} - edit this list to taste
+${targets.map(
+      (q) => `            client.invalidateQueries({ queryKey: keys.${q.name}.all });`
+    ).join("\n")}
+        },` : "";
+    const arrow = unwrap ? `(${vars.arg}: ${vars.type}) => {${unwrap}
+            return request<${name}Response>({
+                method: '${e.method.toUpperCase()}',
+                path: ${path4},${queryObject(
+      e,
+      "                "
+    )}${headersObject(e, spec.vars, "                ")}${bodyField(
+      vars.body
+    )}
+            });
+        }` : `(${vars.arg ? `${vars.arg}: ${vars.type}` : ""}) =>
+            request<${name}Response>({
+                method: '${e.method.toUpperCase()}',
+                path: ${path4},${queryObject(
+      e,
+      "                "
+    )}${headersObject(e, spec.vars, "                ")}${bodyField(
+      vars.body
+    )}
+            })`;
+    return `//${e.method.toUpperCase()} ${e.url}
+export function use${name}() {
+    const client = useQueryClient();
+
+    return useMutation({
+        mutationFn: ${arrow},${onSuccess}
+    });
+}`;
+  });
+  const unique = [...new Set(typeImports)];
+  const tpl = `
+${banner(spec)}
+
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+import { request${needsSegment ? ", segment" : ""} } from './client';${invalidate.length ? `
+import { keys } from './keys';` : ""}
+import type { ${unique.join(", ")} } from './types';
+
+${fns.join("\n\n")}
+`;
+  return tpl;
+}
+
+// ../bruno/src/emitQueries.ts
+function queriesTs(spec) {
+  const list2 = queries(spec);
+  const needsSegment = list2.some((e) => e.path.length > 0);
+  const typeImports = list2.flatMap((e) => [
+    `${pascal(e.name)}Response`,
+    ...hasParams(e) ? [`${pascal(e.name)}Params`] : []
+  ]);
+  const fns = list2.map((e) => {
+    const name = pascal(e.name);
+    const arg = hasParams(e) ? `params: ${name}Params` : "";
+    const path4 = pathExpression(pathOf(spec, e), e.path);
+    return `export function ${e.name}Query(${arg}) {
+    return queryOptions({
+        queryKey: keys.${e.name}.of(${hasParams(e) ? "params" : ""}),
+        queryFn: ({ signal }) =>
+            request<${name}Response>({
+                method: '${e.method.toUpperCase()}',
+                path: ${path4},${queryObject(
+      e,
+      "                "
+    )}${headersObject(e, spec.vars, "                ")}
+                signal,
+            }),
+    });
+}`;
+  });
+  const tpl = `
+${banner(spec)}
+
+import { queryOptions } from '@tanstack/react-query';
+
+import { request${needsSegment ? ", segment" : ""} } from './client';
+import { keys } from './keys';
+import type { ${typeImports.join(", ")} } from './types';
+
+${fns.join("\n\n")}
+`;
+  return tpl;
+}
+
+// ../bruno/src/infer.ts
+var PRIMS = ["string", "number", "boolean", "null"];
+var MAX_DEPTH = 12;
+function empty() {
+  return { prims: /* @__PURE__ */ new Set() };
+}
+function observe(shape, value2, depth = 0) {
+  if (depth > MAX_DEPTH) {
+    return;
+  }
+  if (value2 === null) {
+    shape.prims.add("null");
+    return;
+  }
+  if (Array.isArray(value2)) {
+    shape.array ??= empty();
+    for (const item of value2) {
+      observe(shape.array, item, depth + 1);
+    }
+    return;
+  }
+  if (typeof value2 === "object") {
+    shape.object ??= { total: 0, fields: /* @__PURE__ */ new Map() };
+    shape.object.total++;
+    for (const [key, item] of Object.entries(value2)) {
+      let field = shape.object.fields.get(key);
+      if (!field) {
+        field = { shape: empty(), seen: 0 };
+        shape.object.fields.set(key, field);
+      }
+      field.seen++;
+      observe(field.shape, item, depth + 1);
+    }
+    return;
+  }
+  if (typeof value2 === "string") {
+    shape.prims.add("string");
+  } else if (typeof value2 === "number") {
+    shape.prims.add("number");
+  } else if (typeof value2 === "boolean") {
+    shape.prims.add("boolean");
+  }
+}
+function ident(key) {
+  return /^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key);
+}
+function renderObject(obj, indent) {
+  if (obj.fields.size === 0) {
+    return "Record<string, unknown>";
+  }
+  const inner = indent + "    ";
+  const lines = [...obj.fields].map(([key, field]) => {
+    const optional = field.seen < obj.total ? "?" : "";
+    return `${inner}${ident(key)}${optional}: ${render(
+      field.shape,
+      inner
+    )};`;
+  });
+  return `{
+${lines.join("\n")}
+${indent}}`;
+}
+function parts(shape, indent) {
+  const out = PRIMS.filter((p) => shape.prims.has(p));
+  if (shape.array) {
+    const inner = parts(shape.array, indent);
+    const element = inner.length ? inner.join(" | ") : "unknown";
+    out.push(inner.length > 1 ? `(${element})[]` : `${element}[]`);
+  }
+  if (shape.object) {
+    out.push(renderObject(shape.object, indent));
+  }
+  return out;
+}
+function render(shape, indent = "") {
+  const out = parts(shape, indent);
+  return out.length ? out.join(" | ") : "unknown";
+}
+function infer(values, indent = "") {
+  if (values.length === 0) {
+    return "unknown";
+  }
+  const shape = empty();
+  for (const value2 of values) {
+    observe(shape, value2, 0);
+  }
+  return render(shape, indent);
+}
+
+// ../bruno/src/emitTypes.ts
+function inferBody(e, vars) {
+  if (!e.body) {
+    return void 0;
+  }
+  const substituted = substitute(e.body, vars);
+  for (const text2 of [
+    substituted,
+    substituted.replace(/\{\{[\w.-]+\}\}/g, "x")
+  ]) {
+    try {
+      return infer([JSON.parse(text2)]);
+    } catch {
+    }
+  }
+  return "unknown";
+}
+function responseType(spec, e) {
+  const sample = spec.samples[e.name];
+  if (!sample || "skipped" in sample) {
+    const why = sample ? sample.skipped : "no sample";
+    return `//not sampled: ${why}
+export type ${pascal(
+      e.name
+    )}Response = unknown;`;
+  }
+  return `export type ${pascal(e.name)}Response = ${infer([sample.body])};`;
+}
+function typesTs(spec) {
+  const blocks = [];
+  for (const e of spec.endpoints) {
+    const name = pascal(e.name);
+    const parts2 = [
+      `//${e.method.toUpperCase()} ${e.url}${e.folder ? `  (${e.folder})` : ""}`
+    ];
+    if (hasParams(e)) {
+      parts2.push(`export type ${name}Params = {
+${paramsType(e)}
+};`);
+    }
+    const body3 = isQuery(e) ? void 0 : inferBody(e, spec.vars);
+    if (body3) {
+      parts2.push(`export type ${name}Body = ${body3};`);
+    }
+    parts2.push(responseType(spec, e));
+    blocks.push(parts2.join("\n"));
+  }
+  const tpl = `
+${banner(spec)}
+
+${blocks.join("\n\n")}
+`;
+  return tpl;
+}
+
 // ../bruno/src/sample.ts
 var TIMEOUT_MS = 1e4;
 var CONCURRENCY = 4;
@@ -1086,474 +1547,6 @@ function deserialise(text2, file) {
   return parsed.endpoints ?? {};
 }
 
-// src/genApiClient.ts
-function genApiClient(o) {
-  const spec = o.api;
-  const tpl = `
-${banner(spec)}
-
-import { config } from './config';
-
-export class ApiError extends Error {
-    constructor(
-        readonly status: number,
-        readonly body: unknown,
-        readonly url: string
-    ) {
-        super(\`\${status} \${url}\`);
-        this.name = 'ApiError';
-    }
-}
-
-export type RequestOpts = {
-    method: string;
-    path: string;
-    query?: Record<string, string | number | undefined>;
-    body?: unknown;
-    headers?: Record<string, string>;
-    signal?: AbortSignal;
-};
-
-//path parameters go through this rather than straight into the template, so
-//an id containing a slash cannot escape into the url as a new segment
-export function segment(value: string | number) {
-    return encodeURIComponent(String(value));
-}
-
-//an undefined query parameter is dropped rather than sent as "undefined"
-function search(query: RequestOpts['query']) {
-    const params = new URLSearchParams();
-
-    for (const [key, value] of Object.entries(query ?? {})) {
-        if (value !== undefined && value !== '') {
-            params.set(key, String(value));
-        }
-    }
-
-    const text = params.toString();
-    return text ? \`?\${text}\` : '';
-}
-
-export async function request<T>(opts: RequestOpts): Promise<T> {
-    const url = \`\${config.baseUrl}\${opts.path}\${search(opts.query)}\`;
-
-    const headers: Record<string, string> = {
-        Accept: 'application/json',
-        ...opts.headers,
-        ...config.headers,
-    };
-
-    if (config.token) {
-        headers.Authorization = \`Bearer \${config.token}\`;
-    }
-
-    if (opts.body !== undefined) {
-        headers['Content-Type'] ??= 'application/json';
-    }
-
-    const res = await fetch(url, {
-        method: opts.method,
-        headers,
-        body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-        signal: opts.signal,
-    });
-
-    //read the body before throwing: an error payload is usually the only
-    //thing that says *why* the call failed
-    const text = await res.text();
-    let parsed: unknown = undefined;
-
-    if (text) {
-        try {
-            parsed = JSON.parse(text);
-        } catch {
-            parsed = text;
-        }
-    }
-
-    if (!res.ok) {
-        throw new ApiError(res.status, parsed, url);
-    }
-
-    return parsed as T;
-}
-`;
-  return tpl;
-}
-
-// src/genApiConfig.ts
-function genApiConfig(o) {
-  const spec = o.api;
-  const base = baseUrl(spec);
-  const note = spec.secrets.length ? `
-//The collection declares these as secrets: ${spec.secrets.join(
-    ", "
-  )}.
-//Bruno keeps their values outside the .bru files, so they are not here either.` : "";
-  const tpl = `
-//Settings for the generated API client.
-//
-//This is the only file under src/api/ that "npm run api:gen" leaves alone -
-//everything else here is overwritten. Edit freely.${note}
-
-export type ApiConfig = {
-    baseUrl: string;
-    //sent as "Authorization: Bearer <token>" when set
-    token?: string;
-    //merged into every request, after the generated per-request headers
-    headers?: Record<string, string>;
-};
-
-export const config: ApiConfig = {
-    baseUrl: ${str(base)},
-    token: undefined,
-};
-`;
-  return tpl;
-}
-
-// src/genApiIndex.ts
-function genApiIndex(o) {
-  const spec = o.api;
-  const lines = ["export * from './client';", "export * from './config';"];
-  if (queries(spec).length) {
-    lines.push("export * from './keys';", "export * from './queries';");
-  }
-  if (mutations(spec).length) {
-    lines.push("export * from './mutations';");
-  }
-  lines.push("export type * from './types';");
-  const tpl = `
-${banner(spec)}
-
-${lines.join("\n")}
-`;
-  return tpl;
-}
-
-// src/genApiKeys.ts
-function genApiKeys(o) {
-  const spec = o.api;
-  const list2 = queries(spec);
-  const imports = list2.filter(hasParams).map((e) => `${pascal(e.name)}Params`);
-  const types = imports.length ? `
-import type { ${imports.join(", ")} } from './types';
-` : "";
-  const entries2 = list2.map((e) => {
-    const key = str(e.name);
-    const of = hasParams(e) ? `(params: ${pascal(e.name)}Params) => [${key}, params] as const` : `() => [${key}] as const`;
-    return `    ${e.name}: {
-        all: [${key}] as const,
-        of: ${of},
-    },`;
-  });
-  const tpl = `
-${banner(spec)}
-${types}
-export const keys = {
-${entries2.join("\n")}
-};
-`;
-  return tpl;
-}
-
-// src/genApiMutations.ts
-function variables(e, name, body3) {
-  if (hasParams(e) && body3) {
-    return {
-      type: `{ params: ${name}Params; body: ${name}Body }`,
-      arg: "vars",
-      params: "vars.params",
-      body: "vars.body"
-    };
-  }
-  if (hasParams(e)) {
-    return {
-      type: `${name}Params`,
-      arg: "params",
-      params: "params",
-      body: void 0
-    };
-  }
-  if (body3) {
-    return {
-      type: `${name}Body`,
-      arg: "body",
-      params: void 0,
-      body: "body"
-    };
-  }
-  return { type: "void", arg: "", params: void 0, body: void 0 };
-}
-function bodyField(expr) {
-  if (!expr) {
-    return "";
-  }
-  return `
-                ${expr === "body" ? "body" : `body: ${expr}`},`;
-}
-function genApiMutations(o) {
-  const spec = o.api;
-  const list2 = mutations(spec);
-  const invalidate = queries(spec);
-  const needsSegment = list2.some((e) => e.path.length > 0);
-  const typeImports = [];
-  const fns = list2.map((e) => {
-    const name = pascal(e.name);
-    const hasBody = Boolean(e.body);
-    const vars = variables(e, name, hasBody);
-    typeImports.push(`${name}Response`);
-    if (hasParams(e)) {
-      typeImports.push(`${name}Params`);
-    }
-    if (hasBody) {
-      typeImports.push(`${name}Body`);
-    }
-    const unwrap = vars.params && vars.params !== "params" ? `
-            const params = ${vars.params};
-` : "";
-    const path4 = pathExpression(pathOf(spec, e), e.path);
-    const siblings = invalidate.filter((q) => q.folder === e.folder);
-    const targets = siblings.length ? siblings : invalidate;
-    const scope2 = siblings.length ? `every query in the '${e.folder || "root"}' folder` : "every query in the collection";
-    const onSuccess = targets.length ? `
-        onSuccess: () => {
-            //${scope2} - edit this list to taste
-${targets.map(
-      (q) => `            client.invalidateQueries({ queryKey: keys.${q.name}.all });`
-    ).join("\n")}
-        },` : "";
-    const arrow = unwrap ? `(${vars.arg}: ${vars.type}) => {${unwrap}
-            return request<${name}Response>({
-                method: '${e.method.toUpperCase()}',
-                path: ${path4},${queryObject(
-      e,
-      "                "
-    )}${headersObject(e, spec.vars, "                ")}${bodyField(
-      vars.body
-    )}
-            });
-        }` : `(${vars.arg ? `${vars.arg}: ${vars.type}` : ""}) =>
-            request<${name}Response>({
-                method: '${e.method.toUpperCase()}',
-                path: ${path4},${queryObject(
-      e,
-      "                "
-    )}${headersObject(e, spec.vars, "                ")}${bodyField(
-      vars.body
-    )}
-            })`;
-    return `//${e.method.toUpperCase()} ${e.url}
-export function use${name}() {
-    const client = useQueryClient();
-
-    return useMutation({
-        mutationFn: ${arrow},${onSuccess}
-    });
-}`;
-  });
-  const unique = [...new Set(typeImports)];
-  const tpl = `
-${banner(spec)}
-
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-
-import { request${needsSegment ? ", segment" : ""} } from './client';${invalidate.length ? `
-import { keys } from './keys';` : ""}
-import type { ${unique.join(", ")} } from './types';
-
-${fns.join("\n\n")}
-`;
-  return tpl;
-}
-
-// src/genApiQueries.ts
-function genApiQueries(o) {
-  const spec = o.api;
-  const list2 = queries(spec);
-  const needsSegment = list2.some((e) => e.path.length > 0);
-  const typeImports = list2.flatMap((e) => [
-    `${pascal(e.name)}Response`,
-    ...hasParams(e) ? [`${pascal(e.name)}Params`] : []
-  ]);
-  const fns = list2.map((e) => {
-    const name = pascal(e.name);
-    const arg = hasParams(e) ? `params: ${name}Params` : "";
-    const path4 = pathExpression(pathOf(spec, e), e.path);
-    return `export function ${e.name}Query(${arg}) {
-    return queryOptions({
-        queryKey: keys.${e.name}.of(${hasParams(e) ? "params" : ""}),
-        queryFn: ({ signal }) =>
-            request<${name}Response>({
-                method: '${e.method.toUpperCase()}',
-                path: ${path4},${queryObject(
-      e,
-      "                "
-    )}${headersObject(e, spec.vars, "                ")}
-                signal,
-            }),
-    });
-}`;
-  });
-  const tpl = `
-${banner(spec)}
-
-import { queryOptions } from '@tanstack/react-query';
-
-import { request${needsSegment ? ", segment" : ""} } from './client';
-import { keys } from './keys';
-import type { ${typeImports.join(", ")} } from './types';
-
-${fns.join("\n\n")}
-`;
-  return tpl;
-}
-
-// ../bruno/src/infer.ts
-var PRIMS = ["string", "number", "boolean", "null"];
-var MAX_DEPTH = 12;
-function empty() {
-  return { prims: /* @__PURE__ */ new Set() };
-}
-function observe(shape, value2, depth = 0) {
-  if (depth > MAX_DEPTH) {
-    return;
-  }
-  if (value2 === null) {
-    shape.prims.add("null");
-    return;
-  }
-  if (Array.isArray(value2)) {
-    shape.array ??= empty();
-    for (const item of value2) {
-      observe(shape.array, item, depth + 1);
-    }
-    return;
-  }
-  if (typeof value2 === "object") {
-    shape.object ??= { total: 0, fields: /* @__PURE__ */ new Map() };
-    shape.object.total++;
-    for (const [key, item] of Object.entries(value2)) {
-      let field = shape.object.fields.get(key);
-      if (!field) {
-        field = { shape: empty(), seen: 0 };
-        shape.object.fields.set(key, field);
-      }
-      field.seen++;
-      observe(field.shape, item, depth + 1);
-    }
-    return;
-  }
-  if (typeof value2 === "string") {
-    shape.prims.add("string");
-  } else if (typeof value2 === "number") {
-    shape.prims.add("number");
-  } else if (typeof value2 === "boolean") {
-    shape.prims.add("boolean");
-  }
-}
-function ident(key) {
-  return /^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key);
-}
-function renderObject(obj, indent) {
-  if (obj.fields.size === 0) {
-    return "Record<string, unknown>";
-  }
-  const inner = indent + "    ";
-  const lines = [...obj.fields].map(([key, field]) => {
-    const optional = field.seen < obj.total ? "?" : "";
-    return `${inner}${ident(key)}${optional}: ${render(
-      field.shape,
-      inner
-    )};`;
-  });
-  return `{
-${lines.join("\n")}
-${indent}}`;
-}
-function parts(shape, indent) {
-  const out = PRIMS.filter((p) => shape.prims.has(p));
-  if (shape.array) {
-    const inner = parts(shape.array, indent);
-    const element = inner.length ? inner.join(" | ") : "unknown";
-    out.push(inner.length > 1 ? `(${element})[]` : `${element}[]`);
-  }
-  if (shape.object) {
-    out.push(renderObject(shape.object, indent));
-  }
-  return out;
-}
-function render(shape, indent = "") {
-  const out = parts(shape, indent);
-  return out.length ? out.join(" | ") : "unknown";
-}
-function infer(values, indent = "") {
-  if (values.length === 0) {
-    return "unknown";
-  }
-  const shape = empty();
-  for (const value2 of values) {
-    observe(shape, value2, 0);
-  }
-  return render(shape, indent);
-}
-
-// src/genApiTypes.ts
-function inferBody(e, vars) {
-  if (!e.body) {
-    return void 0;
-  }
-  const substituted = substitute(e.body, vars);
-  for (const text2 of [
-    substituted,
-    substituted.replace(/\{\{[\w.-]+\}\}/g, "x")
-  ]) {
-    try {
-      return infer([JSON.parse(text2)]);
-    } catch {
-    }
-  }
-  return "unknown";
-}
-function responseType(spec, e) {
-  const sample = spec.samples[e.name];
-  if (!sample || "skipped" in sample) {
-    const why = sample ? sample.skipped : "no sample";
-    return `//not sampled: ${why}
-export type ${pascal(
-      e.name
-    )}Response = unknown;`;
-  }
-  return `export type ${pascal(e.name)}Response = ${infer([sample.body])};`;
-}
-function genApiTypes(o) {
-  const spec = o.api;
-  const blocks = [];
-  for (const e of spec.endpoints) {
-    const name = pascal(e.name);
-    const parts2 = [
-      `//${e.method.toUpperCase()} ${e.url}${e.folder ? `  (${e.folder})` : ""}`
-    ];
-    if (hasParams(e)) {
-      parts2.push(`export type ${name}Params = {
-${paramsType(e)}
-};`);
-    }
-    const body3 = isQuery(e) ? void 0 : inferBody(e, spec.vars);
-    if (body3) {
-      parts2.push(`export type ${name}Body = ${body3};`);
-    }
-    parts2.push(responseType(spec, e));
-    blocks.push(parts2.join("\n"));
-  }
-  const tpl = `
-${banner(spec)}
-
-${blocks.join("\n\n")}
-`;
-  return tpl;
-}
-
 // src/apiFiles.ts
 function apiRoot(o) {
   return `${appDir(o)}/src/api`;
@@ -1568,21 +1561,21 @@ function apiFiles(o, root = apiRoot(o)) {
     return {};
   }
   const files = {
-    [preserved(root)]: genApiConfig(o),
-    [`${root}/client.ts`]: genApiClient(o),
-    [`${root}/types.ts`]: genApiTypes(o),
-    [`${root}/index.ts`]: genApiIndex(o),
+    [preserved(root)]: configTs(spec),
+    [`${root}/client.ts`]: clientTs(spec),
+    [`${root}/types.ts`]: typesTs(spec),
+    [`${root}/index.ts`]: indexTs(spec),
     //the collection and its captured responses stay at the workspace root
     //rather than in an app: they are the input to regeneration, and the
     //"tsreact" marker that points at them is in the root manifest
     "api/samples.json": serialise(spec, spec.samples)
   };
   if (queries(spec).length) {
-    files[`${root}/keys.ts`] = genApiKeys(o);
-    files[`${root}/queries.ts`] = genApiQueries(o);
+    files[`${root}/keys.ts`] = keysTs(spec);
+    files[`${root}/queries.ts`] = queriesTs(spec);
   }
   if (mutations(spec).length) {
-    files[`${root}/mutations.ts`] = genApiMutations(o);
+    files[`${root}/mutations.ts`] = mutationsTs(spec);
   }
   return files;
 }
@@ -1950,7 +1943,7 @@ function readCollection(dir, env2) {
   return { collection, ...readEnvironment(dir, env2), endpoints };
 }
 
-// src/pm.ts
+// ../pm/src/pm.ts
 var PMS = {
   pnpm: {
     name: "pnpm",
@@ -3698,7 +3691,7 @@ function nextDrizzle(o) {
   return files;
 }
 
-// src/png.ts
+// ../png/src/png.ts
 import { deflateSync } from "node:zlib";
 var CRC_TABLE = (() => {
   const table = new Int32Array(256);
@@ -3750,7 +3743,7 @@ function encodePng(size, rgba) {
   ]);
 }
 
-// src/genIconPng.ts
+// ../png/src/icon.ts
 function hash(name) {
   let h = 2166136261;
   for (let i = 0; i < name.length; i++) {
@@ -3788,7 +3781,7 @@ function inside(x, y, dim, r) {
 }
 var GRID = 5;
 var SS = 2;
-function genIconPng(name, size, maskable = false) {
+function icon(name, size, maskable = false) {
   const seed = hash(name);
   const h = hue(seed);
   const fg = hsl(h, 0.72, 0.62);
@@ -4251,9 +4244,9 @@ function pwa(o) {
     "apps/web/tsconfig.sw.json": genSwTsConfig(),
     "apps/web/public/manifest.webmanifest": genWebManifest(o.name),
     "apps/web/public/icon.svg": genIconSvg(o.name),
-    "apps/web/public/icon-192.png": genIconPng(o.name, 192),
-    "apps/web/public/icon-512.png": genIconPng(o.name, 512),
-    "apps/web/public/icon-maskable-512.png": genIconPng(o.name, 512, true),
+    "apps/web/public/icon-192.png": icon(o.name, 192),
+    "apps/web/public/icon-512.png": icon(o.name, 512),
+    "apps/web/public/icon-maskable-512.png": icon(o.name, 512, true),
     "apps/web/src/sw.ts": genSwTs()
   };
 }

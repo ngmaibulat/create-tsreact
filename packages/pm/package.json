@@ -1,0 +1,14 @@
+{
+  "name": "@tsreact/pm",
+  "version": "0.0.0",
+  "description": "Which package manager launched us, and how to spell its commands",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/pm.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.1.2"
+  }
+}

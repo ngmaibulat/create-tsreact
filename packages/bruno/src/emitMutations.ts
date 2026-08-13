@@ -1,4 +1,3 @@
-import type { Opts } from "./cli.js";
 import {
     banner,
     hasParams,
@@ -9,8 +8,8 @@ import {
     pathOf,
     queries,
     queryObject,
-} from "@tsreact/bruno/emit";
-import type { ApiSpec, Endpoint } from "@tsreact/bruno/spec";
+} from "./emit.js";
+import type { ApiSpec, Endpoint } from "./spec.js";
 
 //One hook per mutating endpoint. These are hooks rather than plain option
 //factories because a mutation needs the query client in order to invalidate,
@@ -63,8 +62,7 @@ function bodyField(expr: string | undefined) {
     return `\n                ${expr === "body" ? "body" : `body: ${expr}`},`;
 }
 
-export default function genApiMutations(o: Opts) {
-    const spec = o.api as ApiSpec;
+export default function mutationsTs(spec: ApiSpec) {
     const list = mutations(spec);
     const invalidate = queries(spec);
 

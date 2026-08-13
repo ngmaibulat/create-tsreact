@@ -3,7 +3,7 @@ import chalk from "chalk";
 import { apiRoot } from "./apiFiles.js";
 import { DESCRIPTIONS, TEMPLATES } from "./cli.js";
 import type { Opts } from "./cli.js";
-import { detectPm } from "./pm.js";
+import { detectPm } from "@tsreact/pm";
 
 //error path: no app name was given
 export function usage() {

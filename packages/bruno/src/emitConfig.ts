@@ -1,6 +1,5 @@
-import type { Opts } from "./cli.js";
-import { baseUrl, str } from "@tsreact/bruno/emit";
-import type { ApiSpec } from "@tsreact/bruno/spec";
+import { baseUrl, str } from "./emit.js";
+import type { ApiSpec } from "./spec.js";
 
 //The one file under src/api/ that is NOT regenerated. Everything else there
 //is overwritten by "npm run api:gen", so the hand-editable settings - base
@@ -11,8 +10,7 @@ import type { ApiSpec } from "@tsreact/bruno/spec";
 //so it is whatever environment the collection was read with. The token is
 //deliberately left empty even when the collection had one: a scaffolder must
 //not write a credential into a file destined for git.
-export default function genApiConfig(o: Opts) {
-    const spec = o.api as ApiSpec;
+export default function configTs(spec: ApiSpec) {
     const base = baseUrl(spec);
 
     const note = spec.secrets.length

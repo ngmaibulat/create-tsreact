@@ -1,12 +1,10 @@
-import type { Opts } from "./cli.js";
-import { banner, hasParams, pascal, queries, str } from "@tsreact/bruno/emit";
-import type { ApiSpec } from "@tsreact/bruno/spec";
+import { banner, hasParams, pascal, queries, str } from "./emit.js";
+import type { ApiSpec } from "./spec.js";
 
 //Query keys in one place so mutations can invalidate by endpoint without
 //restating the literal. Each entry has an "all" prefix - what a mutation
 //invalidates - and "of(params)", the exact key one query uses.
-export default function genApiKeys(o: Opts) {
-    const spec = o.api as ApiSpec;
+export default function keysTs(spec: ApiSpec) {
     const list = queries(spec);
 
     const imports = list

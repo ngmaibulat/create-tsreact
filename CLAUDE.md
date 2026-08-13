@@ -9,24 +9,41 @@ pnpm install          # at the workspace root - this repo is a pnpm workspace
 pnpm build            # esbuild -> packages/cli/bin/index.js (single bundled ESM file)
 pnpm build-watch      # same, with --watch
 pnpm test             # build, then node smoke.mjs (scaffolds every template for real)
-pnpm typecheck        # tsc --noEmit over both packages
+pnpm typecheck        # tsc --noEmit over each package in turn
 pnpm lint             # eslint packages/*/src
 pnpm format:check     # prettier packages/*/src --check
 pnpm format:fix       # prettier packages/*/src --write
 ```
 
-The repo is a pnpm workspace of two packages:
+The repo is a pnpm workspace of four packages:
 
-| Package          | Name             | What it is                                                      |
-| ---------------- | ---------------- | --------------------------------------------------------------- |
-| `packages/cli`   | `create-tsreact` | the published package: the CLI, all generators, the smoke suite |
-| `packages/bruno` | `@tsreact/bruno` | private; the `.bru` parser, sampler and type inferrer           |
+| Package          | Name             | What it is                                                                  |
+| ---------------- | ---------------- | --------------------------------------------------------------------------- |
+| `packages/cli`   | `create-tsreact` | the published package: the CLI, all generators, the smoke suite             |
+| `packages/bruno` | `@tsreact/bruno` | private; the `.bru` parser, sampler, type inferrer and the client emitters  |
+| `packages/png`   | `@tsreact/png`   | private; a PNG encoder over `node:zlib` and the identicon the PWA icons use |
+| `packages/pm`    | `@tsreact/pm`    | private; which package manager launched us, and how to spell its commands   |
 
-`@tsreact/bruno` is a **devDependency** of the CLI, not a dependency: esbuild
-inlines it into `bin/index.js`, so it has no runtime presence, and a
+The three private ones are all **devDependencies** of the CLI, not dependencies:
+esbuild inlines them into `bin/index.js`, so they have no runtime presence, and a
 `workspace:*` under `dependencies` would make `pnpm publish` demand a published
-`@tsreact/bruno`. Its `exports` map points straight at `.ts` sources — there is
-no build step for it.
+`@tsreact/*`. Their `exports` maps point straight at `.ts` sources — there is no
+build step for any of them. **Their code ships; the packages do not.** Only
+`packages/cli/src` is in the tarball, so the extracted sources are readable in
+the repo and nowhere else.
+
+That is also why each one carries its own `@types/node` devDependency. Without it
+a package resolves the stray `@types/node@18.11.5` sitting in the root
+`node_modules` and typechecks against different `Buffer` types than the CLI does
+— which is what `packages/png` did on the day it was split out. Same class of
+trap as the `typescript` entry in "Out of date" below: pnpm's isolated linker does
+not hand a package its neighbours' dependencies.
+
+**A new package needs four touches**, none of them compile-checked: the
+`package.json` (private, `exports` at `.ts`, `@types/node`), a `tsconfig.json`
+copied from an existing one, a `workspace:*` line in `packages/cli`'s
+devDependencies, and a `tsc --noEmit -p` clause in the root `typecheck` script.
+`lint` and `format` already glob `packages/*/src`.
 
 **`CliError` lives in `packages/bruno/src/error.ts`**, not in the CLI. `parse.ts`,
 `collection.ts` and `sample.ts` all throw it, and importing it back out of the
@@ -87,7 +104,9 @@ The seven files in `src/presets/` map output paths to those functions. **Presets
 
 `genEnvDts` shows the boundary: the vite templates need `/// <reference types="vite/client" />` where the esbuild ones need `declare module "*.css";` — one line either way, so it branches. `genViteTsConfig` does not, because almost nothing in it is shared.
 
-The parsed collection is hung off `Opts` as `o.api?: ApiSpec` precisely to keep that rule intact — every `genApi*.ts` still takes one `Opts`. It is also why `genManifest`, `genExpoPackageJson` and `genExpoAppTsx` were moved from `(name: string)` to `(o: Opts)`: they now branch on `o.api`.
+The parsed collection is hung off `Opts` as `o.api?: ApiSpec`, which is why `genManifest`, `genExpoPackageJson` and `genExpoAppTsx` were moved from `(name: string)` to `(o: Opts)`: they now branch on `o.api`.
+
+**The `--api` emitters are the documented exception** and no longer live here at all. They take `(spec: ApiSpec)` and sit in `@tsreact/bruno` — see the `--api` section below for why narrowing the argument is what let them move.
 
 ### Adding a template
 
@@ -101,7 +120,7 @@ The parsed collection is hung off `Opts` as `o.api?: ApiSpec` precisely to keep 
 
 `writeTree` applies `.trim() + "\n"` to every string, so generators may open their template literal on the line before the content (most do) without that blank first line reaching disk.
 
-**Binary files.** A preset may also return a `Buffer`, which `writeTree` writes through byte for byte (the type is `Files = Record<string, string | Buffer>`). This exists for exactly one case: the PWA's PNG icons, which Chrome requires for installability and which cannot be expressed as text. They are still _generated_, not checked in — `src/png.ts` is a small PNG encoder over `node:zlib`, and `src/genIconPng.ts` draws an identicon from a hash of the app name. The "no binary assets in the repo" rule holds; the "everything is a string" one no longer does. Icons are deterministic per name on purpose, so re-scaffolding produces no diff.
+**Binary files.** A preset may also return a `Buffer`, which `writeTree` writes through byte for byte (the type is `Files = Record<string, string | Buffer>`). This exists for exactly one case: the PWA's PNG icons, which Chrome requires for installability and which cannot be expressed as text. They are still _generated_, not checked in — `@tsreact/png` holds a small PNG encoder over `node:zlib` (`png.ts`) and an identicon drawn from a hash of the app name (`icon.ts`), and `presets/pwa.ts` is its only consumer. The "no binary assets in the repo" rule holds; the "everything is a string" one no longer does. Icons are deterministic per name on purpose, so re-scaffolding produces no diff.
 
 ### `--api`: typed clients from a Bruno collection
 
@@ -117,7 +136,7 @@ api/**.bru ──parse──> ApiSpec ──sample──> api/samples.json
                             src/api/*.ts
 ```
 
-`src/bruno/` is the front end. **It is not `src/api/`** — that is the path these files are _emitted to_ inside the scaffolded app, and having both meanings share a name is how you end up editing the wrong one.
+**`packages/bruno/src/` is the whole feature except the last step.** It is not `src/api/` — that is the path these files are _emitted to_ inside the scaffolded app, and having both meanings share a name is how you end up editing the wrong one.
 
 | Module          | Does                                                 | Deliberately does not                                 |
 | --------------- | ---------------------------------------------------- | ----------------------------------------------------- |
@@ -127,8 +146,13 @@ api/**.bru ──parse──> ApiSpec ──sample──> api/samples.json
 | `sample.ts`     | resolves vars, executes, reads/writes `samples.json` | write anything that could be a credential             |
 | `infer.ts`      | JSON → TypeScript source                             | know about endpoints                                  |
 | `emit.ts`       | naming, base-url splitting, shared emit helpers      | hold whole templates                                  |
+| `emit*.ts`      | one emitted file each, via the `generate.ts` barrel  | know where the file lands                             |
 
-The `gen*.ts` emitters (`genApiTypes`, `genApiClient`, `genApiConfig`, `genApiKeys`, `genApiQueries`, `genApiMutations`, `genApiIndex`) follow the flat convention like every other generator.
+**The seven emitters take `(spec: ApiSpec)`, not `(o: Opts)`.** That is what let them move out of the CLI: they used to read `o.api` off the CLI's `Opts` and cast it, and importing `Opts` back out of the CLI would have made the two packages mutually dependent — the same cycle the `CliError` note above describes. Every one of them touched exactly one field, so narrowing the argument cost nothing and retired an `o.api as ApiSpec` cast seven times over.
+
+They export as `clientTs`, `configTs`, `typesTs`, `keysTs`, `queriesTs`, `mutationsTs` and `indexTs` — named for the files they produce. **The `Ts` suffix is load-bearing:** `emit.ts` already exports `queries()` and `mutations()`, the filters that split a spec into safe and unsafe endpoints, and `apiFiles.ts` imports both sets side by side.
+
+`apiFiles.ts` stays in the CLI, because the split is _what the client source is_ (bruno) against _where it goes_ (the CLI, which is the side that knows `appDir`, `APPS` and `Files`).
 
 **The `.bru` subset.** Three block shapes, all delimited, so one scanner handles them: dictionary `name { k: v }`, list `name [ item ]`, and text `body:json { ... }`. `~key` marks a disabled entry and is dropped. Unknown blocks are parsed and ignored — collections in the wild are full of `script:*` and `tests`, and erroring on them would be useless. Only text blocks get string-skipping while depth-counting; dict blocks don't need it (their only braces are balanced `{{var}}` pairs) and _must not_ have it, or a header value like `don't send this` would swallow the rest of the file.
 
@@ -184,7 +208,7 @@ The expo template is the only one that shares nothing with the rest: no esbuild,
 - **No inline `<script>` in `public/popup.html`.** MV3's CSP is `script-src 'self'`. In particular, do not copy the react template's live-reload snippet into it.
 - **`app.css` lives in `src/`, not `public/`.** It is imported from `app.tsx` so esbuild emits `public/app.css` as build output. A handwritten `public/app.css` would be silently overwritten by the first CSS import, since `--outdir` is also `public/`.
 - **`npm create` swallows unknown flags.** `npm create tsreact myapp --template extension` sets `npm_config_template` and never reaches `process.argv`; users need `-- --template extension`. `pnpm create`, `pnpm dlx` and `npx` all forward flags as-is and need no separator — verified, not assumed. This is documented in `help()` and the README.
-- **`SAMPLE_MODES` living in `src/bruno/spec.ts` rather than `sample.ts`.** `cli.ts` needs it to validate the flag, and `sample.ts` imports `CliError` back out of `cli.ts`. `spec.ts` has no runtime imports at all, which is what keeps that from being a cycle — moving the constant "where it belongs" reintroduces one.
+- **`SAMPLE_MODES` living in `packages/bruno/src/spec.ts` rather than `sample.ts`.** `cli.ts` needs it to validate the flag, and `sample.ts` imports `CliError` back out of `cli.ts`. `spec.ts` has no runtime imports at all, which is what keeps that from being a cycle — moving the constant "where it belongs" reintroduces one.
 - **Dict blocks must not get the text-block string scanner.** See the `.bru` subset note above: a header value containing an apostrophe is far more common than an unbalanced brace, and treating `'` as a string delimiter in a dict block swallows the rest of the file.
 - **`config.ts` being excluded from regeneration.** It holds the base URL and the token the user typed in. `index.ts` deletes it from the map when it already exists; without that, the first `pnpm api:gen` silently throws their credentials away. It is the reason config was split out of `client.ts` at all.
 - **`host_permissions` in the extension's manifest.** MV3 blocks a cross-origin fetch that is not declared, and it surfaces as an opaque network error rather than a CORS message — so a generated client that is not listed looks like a broken API rather than a missing permission.
@@ -222,9 +246,17 @@ Consequences: never hand-edit `bin/index.js` — the hook overwrites it. `bin/**
 
 ## Publishing
 
-Publish from `packages/cli`, not from the root — the root is `private: true` and exists only to hold the workspace.
+`pnpm run release` from the root, on a clean `main`. That is `pnpm --filter create-tsreact run release`, which is `npm version patch && pnpm publish` inside `packages/cli` — so the patch bump, the version commit and the `v<x.y.z>` tag all happen as part of publishing, and the version in git always matches what is on npm. Nothing bumps the version by hand.
+
+Never `pnpm publish` from the root: the root is `create-tsreact-workspace`, `private: true`, and exists only to hold the workspace, so it fails with `EPRIVATE`. Publishing is always `packages/cli`.
+
+**`prepublishOnly` in `packages/cli` runs `pnpm run build`.** This is the guard against the 0.0.23 failure below — without it, only `.husky/pre-commit` ever rebuilds `bin/index.js`, so any path to `pnpm publish` that does not go through a commit ships whatever bundle happens to be on disk.
 
 There is no `files` field and no `.npmignore`, so publishing ships everything not gitignored (`src/`, `bin/`, configs). This is also why `--version` can read `../package.json` at runtime — the manifest is always in the tarball, and after the split that path resolves to `packages/cli/package.json`.
+
+That same rule is why **`packages/cli/README.md` and `packages/cli/LICENSE` exist as copies** of the root ones: the tarball is packed from `packages/cli`, so the root files are not in it and the npm page would otherwise be blank. The root `README.md` stays canonical and much longer; the copy is the short npm-facing version. When the template table or the flag tables change, update both — nothing checks that they agree.
+
+`@tsreact/bruno` is a `workspace:*` **devDependency**, which `pnpm publish` rewrites to `0.0.0` in the published manifest. Harmless, since consumers never install devDependencies — but see the note at the top of this file about why it must not move to `dependencies`.
 
 **Verify a release against the tarball, not the version number.** `create-tsreact@0.0.23` on npm is a ~20 KB bundle with no template system at all: the version was bumped but the built `bin/index.js` that shipped predates the feature. `npm view create-tsreact@<v> dist.tarball`, then grep the extracted `bin/index.js` for something the release is supposed to contain.
 
@@ -233,5 +265,7 @@ There is no `files` field and no `.npmignore`, so publishing ships everything no
 ## Out of date
 
 The repo's own toolchain is still largely 2022-era: `eslint` 8 with legacy config, `prettier` 2, and `husky` 8 with the deprecated `husky install` + `husky.sh` shim.
+
+There is also a stray `@types/node@18.11.5` in the root `node_modules` that nothing declares — it arrives transitively. Any package without its own `@types/node` resolves _that_ one, so all four declare `^26.1.2`; see the package table above for what happens when one doesn't.
 
 Two of the old entries are gone. `esbuild` was 0.15, whose `bin/esbuild` is the raw native binary — pnpm shims it as JS and it fails with a `SyntaxError` full of ELF bytes; it is now `^0.28.1`, matching what the templates generate. And `typescript` is now a real devDependency rather than a 4.8.4 that happened to arrive through `tsutils`, because pnpm's isolated linker does not expose transitive dependencies.

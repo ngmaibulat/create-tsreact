@@ -74,11 +74,7 @@ function inside(x: number, y: number, dim: number, r: number) {
 const GRID = 5;
 const SS = 2; //supersampling factor, so the rounded corners are not jagged
 
-export default function genIconPng(
-    name: string,
-    size: number,
-    maskable = false
-) {
+export default function icon(name: string, size: number, maskable = false) {
     const seed = hash(name);
     const h = hue(seed);
     const fg = hsl(h, 0.72, 0.62);

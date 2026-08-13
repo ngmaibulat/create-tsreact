@@ -1,6 +1,6 @@
 import { APPS, scope } from "./cli.js";
 import type { Opts } from "./cli.js";
-import { detectPm } from "./pm.js";
+import { detectPm } from "@tsreact/pm";
 
 //The workspace root. It ships no source of its own - it holds the lockfile,
 //the "tsreact" marker, and the scripts that fan out to apps/*.
