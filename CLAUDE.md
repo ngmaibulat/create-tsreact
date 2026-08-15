@@ -115,7 +115,7 @@ export default function genFoo(name?: string) {
 }
 ```
 
-The seven files in `src/presets/` map output paths to those functions. **Presets must stay thin map-builders** — if they start holding template strings of their own, there are three different places a generated file can be defined. `pwa.ts` spreads `react(o)` and adds four entries, which is the intended way to express "template X is template Y plus some files". `src/apiFiles.ts` is the same idea in the other direction: a map-builder every preset spreads, returning nothing at all unless `o.api` is set. It lives outside `src/presets/` so that directory stays one file per template. `src/huskyFiles.ts` has exactly the same shape for `--husky`, and exists for the same reason — a flag that adds files to all seven templates should not mean seven conditionals.
+The eight files in `src/presets/` map output paths to those functions. **Presets must stay thin map-builders** — if they start holding template strings of their own, there are three different places a generated file can be defined. `pwa.ts` spreads `react(o)` and adds four entries, which is the intended way to express "template X is template Y plus some files". `src/apiFiles.ts` is the same idea in the other direction: a map-builder every preset spreads, returning nothing at all unless `o.api` is set. It lives outside `src/presets/` so that directory stays one file per template. `src/huskyFiles.ts` has exactly the same shape for `--husky`, and exists for the same reason — a flag that adds files to all eight templates should not mean eight conditionals.
 
 `fastifyReact.ts` is the only preset that writes into two package roots (`apps/server/…` and `apps/web/…`). It needs no special handling — `writeTree` derives parent directories from the map keys — and it reuses every `genVite*` generator rather than duplicating them, each of which branches on `o.template` where the workspace child differs.
 
@@ -123,7 +123,7 @@ The seven files in `src/presets/` map output paths to those functions. **Presets
 
 **Generator signatures follow one rule:** a generator takes `(name: string)` if its output depends only on the app name, and `(o: Opts)` if it branches on the template or a flag. Nothing takes both. Generators whose output differs per template branch on `o.template` rather than being duplicated (`genTsConfig`, `genGitIgnore`, `genIndexHtml`, `genAppTsx`, `genStylesCss`, `genEnvDts`, and both oxc configs — `genOxlintrc` turns off one rule each for expo and pwa, `genOxfmtrc` emits `sortTailwindcss` only with tailwind) — except where two templates share nothing at all, which is why expo has its own `genExpoTsConfig` / `genExpoGitIgnore`, and why the vite, next and fastify templates have their own `gen*PackageJson` and `gen*TsConfig` rather than another branch inside the esbuild ones.
 
-`genEnvDts` shows the boundary: the vite templates need `/// <reference types="vite/client" />` where the esbuild ones need `declare module "*.css";` — one line either way, so it branches. `genViteTsConfig` does not, because almost nothing in it is shared.
+`genEnvDts` shows the boundary: the vite templates need `/// <reference types="vite/client" />` where the esbuild ones need `declare module "*.css";` — one line either way, so it branches. `genSpaTsConfig` is the same call made twice over: it serves vite-spa, rsbuild-spa and fastify-react's web half, differing between the vite and rsbuild lanes by nothing but the `types` array, so it branches rather than forking. It does not serve the esbuild templates, because almost nothing in it is shared with those.
 
 The parsed collection is hung off `Opts` as `o.api?: ApiSpec`, which is why `genManifest`, `genExpoPackageJson` and `genExpoAppTsx` were moved from `(name: string)` to `(o: Opts)`: they now branch on `o.api`.
 
@@ -195,7 +195,7 @@ Because `apiRoot` is a function of `o.template`, the template is recorded alongs
 
 **A missing `template` key means a pre-workspace app**, not `react`. Those have a flat `src/api/`, so `recordedTemplate()` returns `undefined` and `index.ts` passes `LEGACY_API_ROOT` explicitly. Falling back to `"react"` there would regenerate into `apps/web/src/api` and leave the real client stale beside it.
 
-### Eight toolchains — don't confuse them
+### Nine toolchains — don't confuse them
 
 The esbuild lane — the CLI itself plus `react`, `extension`, `pwa`:
 
@@ -205,15 +205,17 @@ The esbuild lane — the CLI itself plus `react`, `extension`, `pwa`:
 | Bundler  | `--platform=node --format=esm --target=es2022`, out to `packages/cli/bin/` | `--platform=browser --format=esm`, out to `public/`     | `--platform=browser --format=iife`, out `public/` | react's, plus a second `--format=iife` run for `sw.js`  |
 | tsconfig | `lib: ES2022`, `outDir: ./bin`                                             | `jsx: react-jsx`, DOM libs, `noEmit`, `isolatedModules` | same plus `types: ["chrome"]`                     | same plus `exclude: ["src/sw.ts"]` + `tsconfig.sw.json` |
 
-And the four that are not esbuild at all:
+And the five that are not esbuild at all:
 
-|          | expo template                 | vite-spa template                                    | next-drizzle template                                 | fastify-react template                                           |
-| -------- | ----------------------------- | ---------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------- |
-| Entry    | `index.ts` → `App.tsx`        | `index.html` → `src/main.tsx` → `src/App.tsx`        | `src/app/layout.tsx` + `src/app/page.tsx`             | `apps/server/src/index.ts` + the vite-spa tree under `apps/web/` |
-| Bundler  | **metro**                     | **vite 8** (rolldown is its dependency), out `dist/` | **Turbopack**, out `.next/`                           | **rolldown** for the server, vite for the web                    |
-| tsconfig | `extends: expo/tsconfig.base` | `types: ["vite/client"]`, bundler resolution         | `jsx: react-jsx`, `plugins: [{name:"next"}]`, `paths` | server is `NodeNext` with no DOM; web reuses vite-spa's          |
-| Styling  | StyleSheet objects            | `@tailwindcss/vite`                                  | `@tailwindcss/postcss`                                | `@tailwindcss/vite`                                              |
-| Lint/fmt | oxlint + oxfmt, on `App.tsx` + `index.ts` (no `src/`) | oxlint + oxfmt                      | oxlint + oxfmt                                        | oxlint + oxfmt, once from the root                               |
+|          | expo template                 | vite-spa template                                    | rsbuild-spa template                                   | next-drizzle template                                 | fastify-react template                                           |
+| -------- | ----------------------------- | ---------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------- |
+| Entry    | `index.ts` → `App.tsx`        | `index.html` → `src/main.tsx` → `src/App.tsx`        | `source.entry` → `src/main.tsx` → `src/App.tsx`, no html | `src/app/layout.tsx` + `src/app/page.tsx`             | `apps/server/src/index.ts` + the vite-spa tree under `apps/web/` |
+| Bundler  | **metro**                     | **vite 8** (rolldown is its dependency), out `dist/` | **rspack**, via rsbuild 2, out `dist/`                 | **Turbopack**, out `.next/`                           | **rolldown** for the server, vite for the web                    |
+| tsconfig | `extends: expo/tsconfig.base` | `types: ["vite/client"]`, bundler resolution         | `types: ["@rsbuild/core/types"]`, otherwise vite-spa's  | `jsx: react-jsx`, `plugins: [{name:"next"}]`, `paths` | server is `NodeNext` with no DOM; web reuses vite-spa's          |
+| Styling  | StyleSheet objects            | `@tailwindcss/vite`                                  | `@rsbuild/plugin-tailwindcss`                          | `@tailwindcss/postcss`                                | `@tailwindcss/vite`                                              |
+| Lint/fmt | oxlint + oxfmt, on `App.tsx` + `index.ts` (no `src/`) | oxlint + oxfmt                      | oxlint + oxfmt                                         | oxlint + oxfmt                                        | oxlint + oxfmt, once from the root                               |
+
+`vite-spa`, `rsbuild-spa` and `fastify-react`'s web half share one tsconfig generator — `genSpaTsConfig.ts`, which branches on nothing but that `types` array. It is named for the shape (a bundler-driven SPA) rather than for vite, which is what it used to be called.
 
 The README's "Building" section shows the _react template's_ build command, not this repo's.
 
@@ -239,6 +241,10 @@ The expo template is the only one that shares nothing with the rest: no esbuild,
 - **`host_permissions` in the extension's manifest.** MV3 blocks a cross-origin fetch that is not declared, and it surfaces as an opaque network error rather than a CORS message — so a generated client that is not listed looks like a broken API rather than a missing permission.
 - **The fixture API in `smoke.mjs` running in its own process.** Every scaffold there goes through `execFileSync`, which blocks the event loop, so an in-process `http.Server` never accepts the connection and every sampled request sits until the 10s timeout. It binds port 0 and reports the port on stdout.
 - **Sampling happening before `mkdir`.** An unreachable collection must leave no half-made directory behind. `create()` in `index.ts` awaits `loadSpec` first for that reason alone.
+- **`source.entry` in the rsbuild template's config.** Rsbuild's default entry is `./src/index.tsx`, and this template generates `./src/main.tsx` so its tree matches vite-spa's and the two share `genMainTsx`. Deleting the block does not fall back to something workable — the default file does not exist, so `source.entry` resolves to `{}` and the build produces an app with no code in it.
+- **`html.title` in the rsbuild template's config, and the absent `index.html`.** There is no html file in this template: rsbuild generates the document from its own built-in template, which is also where the `<div id="root">` that `main.tsx` mounts into comes from. So the app name reaches the page only through `html.title`, and a hand-written `apps/web/index.html` is inert unless `html.template` is pointed at it.
+- **`"types": ["@rsbuild/core/types"]` in the rsbuild template's tsconfig.** Unlike vite, rsbuild ships no `src/*-env.d.ts` reference — that array is the *only* route by which css imports, asset imports and `import.meta.env` are typed. Dropping it costs all three at once, and the failure looks like a broken css import rather than a missing types entry. `genSpaTsConfig.ts` branches on exactly this and nothing else.
+- **`@rsbuild/core`, `@rsbuild/plugin-react` and `@rsbuild/plugin-tailwindcss` must stay on one major.** Both plugins peer on `@rsbuild/core: "^2.0.0"`, and the peers are marked optional — so a mismatched major resolves and installs without complaint, then fails at build time.
 - **`@vitejs/plugin-react-oxc` is a trap.** It peers on `vite ^6.3 || ^7` only. oxc is already Vite 8's transform, so `@vitejs/plugin-react@6` _is_ the oxc path; the `-oxc` package is the backport for older Vite and fails peer resolution against 8.
 - **`rolldown-vite` is obsolete here.** It is a Vite **7** alias package (`"vite": "npm:rolldown-vite@..."`). Vite 8 depends on `rolldown` directly, so adding the alias would downgrade the bundler.
 - **A `webpack` key in `next.config.ts`.** Next 16 builds with Turbopack by default and hard-fails rather than falling back, so this turns `next build` into an error rather than a slower build.
@@ -277,7 +283,7 @@ Both of those entries are load-bearing for a reason that is easy to miss. For ox
 - Linting and formatting are `oxlint` and `oxfmt` — the same pair the modern templates generate, and the reason `.oxlintrc.json` here is a near-copy of `genOxlintrc.ts`'s output. It differs in two ways: no `react` plugin (nothing here is JSX) and `env.node` rather than `env.browser`.
 - `unicorn/no-array-sort` is the one rule turned off. It fires on `[...seen].sort()` and on `readdirSync().filter().sort()`, neither of which mutates anything a caller can see, and its suggested `toSorted()` is not in the `ES2022` lib these tsconfigs set — so taking its advice would not compile.
 - `.oxfmtrc.json` sets no indentation. oxfmt reads `.editorconfig`, so `indent_size = 4` wins for `*.ts` — which is why sources are 4-space and lint-staged never reformats them to 2. It does set `sortImports`, which groups external packages above relative ones. Run `pnpm format:fix` rather than hand-formatting.
-- Formatting is scoped to sources, so Markdown, YAML and the root JSON files are **not** auto-formatted on commit. This file, `README.md` and `supported-stacks.md` are hand-maintained. `supported-stacks.md` is the per-template toolchain reference — package manager, bundler, dev/build commands, output directory, Tailwind delivery — written for whoever is choosing or using a template; the "Eight toolchains" table below is the same ground from the generator side, and the two must be kept in step by hand.
+- Formatting is scoped to sources, so Markdown, YAML and the root JSON files are **not** auto-formatted on commit. This file, `README.md` and `supported-stacks.md` are hand-maintained. `supported-stacks.md` is the per-template toolchain reference — package manager, bundler, dev/build commands, output directory, Tailwind delivery — written for whoever is choosing or using a template; the "Nine toolchains" table below is the same ground from the generator side, and the two must be kept in step by hand.
 
 ## Publishing
 

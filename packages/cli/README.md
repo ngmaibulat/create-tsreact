@@ -7,9 +7,9 @@ entire build is a single `esbuild` command you can read in one line. No config
 file, no plugin system, no abstraction to learn before you can change how your
 code is compiled.
 
-The **oxc lane** — `vite-spa`, `next-drizzle`, `fastify-react` — is for when
-you want the ecosystem rather than the minimalism: Vite 8 (rolldown under it),
-Next 16 and Tailwind 4 on by default.
+The **oxc lane** — `vite-spa`, `rsbuild-spa`, `next-drizzle`, `fastify-react` —
+is for when you want the ecosystem rather than the minimalism: Vite 8 (rolldown
+under it), Rsbuild 2 (Rspack), Next 16 and Tailwind 4 on by default.
 
 Both lanes generate TypeScript 7 and React 19, both compose with `--api`, and
 **every** template — `expo` included — lints and formats with `oxlint` and
@@ -38,6 +38,7 @@ you launched it with.
 | `pwa`             | Installable offline app: web manifest + service worker          |
 | `expo`            | React Native app on Expo SDK 57 (bundled by metro, not esbuild) |
 | `vite-spa`        | React SPA on Vite 8, Tailwind 4, oxlint + oxfmt                 |
+| `rsbuild-spa`     | React SPA on Rsbuild 2 (Rspack), Tailwind 4, Fast Refresh       |
 | `next-drizzle`    | Next 16 on Turbopack + Drizzle ORM on SQLite/libsql             |
 | `fastify-react`   | Workspaces monorepo: Fastify API (rolldown) + React on Vite     |
 

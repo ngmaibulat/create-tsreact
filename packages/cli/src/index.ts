@@ -18,6 +18,7 @@ import fastifyReact from "./presets/fastifyReact.js";
 import nextDrizzle from "./presets/nextDrizzle.js";
 import pwa from "./presets/pwa.js";
 import react from "./presets/react.js";
+import rsbuildSpa from "./presets/rsbuildSpa.js";
 import viteSpa from "./presets/viteSpa.js";
 
 const PRESETS: Record<Template, (o: Opts) => Files> = {
@@ -26,6 +27,7 @@ const PRESETS: Record<Template, (o: Opts) => Files> = {
     pwa,
     expo,
     "vite-spa": viteSpa,
+    "rsbuild-spa": rsbuildSpa,
     "next-drizzle": nextDrizzle,
     "fastify-react": fastifyReact,
 };

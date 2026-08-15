@@ -13,6 +13,7 @@ export const TEMPLATES = [
     "pwa",
     "expo",
     "vite-spa",
+    "rsbuild-spa",
     "next-drizzle",
     "fastify-react",
 ] as const;
@@ -26,6 +27,7 @@ export const DESCRIPTIONS: Record<Template, string> = {
     pwa: "installable offline app: manifest + service worker",
     expo: "React Native app on Expo SDK 57 (metro, not esbuild)",
     "vite-spa": "React SPA on Vite 8, Tailwind 4, oxlint + oxfmt",
+    "rsbuild-spa": "React SPA on Rsbuild 2 (Rspack), Tailwind 4",
     "next-drizzle": "Next 16 (Turbopack) + Drizzle on SQLite/libsql",
     "fastify-react": "workspaces monorepo: Fastify API + React on Vite",
 };
@@ -49,6 +51,7 @@ export const APPS: Record<Template, readonly string[]> = {
     pwa: ["web"],
     expo: ["mobile"],
     "vite-spa": ["web"],
+    "rsbuild-spa": ["web"],
     "next-drizzle": ["web"],
     "fastify-react": ["web", "server"],
 };
@@ -68,7 +71,12 @@ export function scope(o: Opts) {
 //bundler plugin compiles it, so there is no separate CLI step to opt into.
 //parseArgs forces o.tailwind true for them, which keeps every generator that
 //already branches on that flag working without a per-template special case.
-const TAILWIND_ALWAYS: readonly Template[] = ["vite-spa", "next-drizzle", "fastify-react"];
+const TAILWIND_ALWAYS: readonly Template[] = [
+    "vite-spa",
+    "rsbuild-spa",
+    "next-drizzle",
+    "fastify-react",
+];
 
 //True when @tailwindcss/cli runs as its own watcher rather than inside the
 //bundler - which is what decides whether there is a "tw" script to advertise,

@@ -156,6 +156,7 @@ const DESCRIPTIONS: Record<Opts["template"], string> = {
     pwa: "Installable Typescript/React PWA",
     expo: "React Native application on Expo",
     "vite-spa": "Typescript/React SPA on Vite",
+    "rsbuild-spa": "Typescript/React SPA on Rsbuild",
     "next-drizzle": "Next.js app with Drizzle on SQLite",
     "fastify-react": "Fastify API and React client in one workspace",
 };

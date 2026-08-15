@@ -4,7 +4,7 @@ import type { Opts } from "./cli.js";
 //unlike eslint there is no plugin package, no parser and no resolver to
 //install - "oxlint" is the whole setup.
 //
-//One config serves all seven templates. "browser" is left on for expo too:
+//One config serves all eight templates. "browser" is left on for expo too:
 //an env only predefines globals, so the cost of an unused one is nothing,
 //while dropping it would mean a second config to keep in step. The build
 //outputs the esbuild templates write into public/ need no entry here either -

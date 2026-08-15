@@ -1626,6 +1626,7 @@ var TEMPLATES = [
   "pwa",
   "expo",
   "vite-spa",
+  "rsbuild-spa",
   "next-drizzle",
   "fastify-react"
 ];
@@ -1635,6 +1636,7 @@ var DESCRIPTIONS = {
   pwa: "installable offline app: manifest + service worker",
   expo: "React Native app on Expo SDK 57 (metro, not esbuild)",
   "vite-spa": "React SPA on Vite 8, Tailwind 4, oxlint + oxfmt",
+  "rsbuild-spa": "React SPA on Rsbuild 2 (Rspack), Tailwind 4",
   "next-drizzle": "Next 16 (Turbopack) + Drizzle on SQLite/libsql",
   "fastify-react": "workspaces monorepo: Fastify API + React on Vite"
 };
@@ -1644,6 +1646,7 @@ var APPS = {
   pwa: ["web"],
   expo: ["mobile"],
   "vite-spa": ["web"],
+  "rsbuild-spa": ["web"],
   "next-drizzle": ["web"],
   "fastify-react": ["web", "server"]
 };
@@ -1653,7 +1656,12 @@ function appDir(o) {
 function scope(o) {
   return `@${o.name.toLowerCase()}`;
 }
-var TAILWIND_ALWAYS = ["vite-spa", "next-drizzle", "fastify-react"];
+var TAILWIND_ALWAYS = [
+  "vite-spa",
+  "rsbuild-spa",
+  "next-drizzle",
+  "fastify-react"
+];
 function standaloneTailwind(o) {
   return o.tailwind && !TAILWIND_ALWAYS.includes(o.template);
 }
@@ -2489,6 +2497,7 @@ var DESCRIPTIONS2 = {
   pwa: "Installable Typescript/React PWA",
   expo: "React Native application on Expo",
   "vite-spa": "Typescript/React SPA on Vite",
+  "rsbuild-spa": "Typescript/React SPA on Rsbuild",
   "next-drizzle": "Next.js app with Drizzle on SQLite",
   "fastify-react": "Fastify API and React client in one workspace"
 };
@@ -2655,6 +2664,7 @@ var OUTPUT = {
   ],
   expo: [],
   "vite-spa": ["apps/web/dist"],
+  "rsbuild-spa": ["apps/web/dist"],
   "next-drizzle": [
     "apps/web/.next",
     "apps/web/out",
@@ -2671,6 +2681,7 @@ var TAILWIND_OUTPUT = {
   extension: "apps/extension/src/popup.css",
   expo: null,
   "vite-spa": null,
+  "rsbuild-spa": null,
   "next-drizzle": null,
   "fastify-react": null
 };
@@ -3173,6 +3184,34 @@ function genServerTsConfig() {
   return tpl;
 }
 
+// src/genSpaTsConfig.ts
+function genSpaTsConfig(o) {
+  const types = o.template === "rsbuild-spa" ? `"@rsbuild/core/types"` : `"vite/client"`;
+  const tpl = `
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "useDefineForClassFields": true,
+        "lib": ["DOM", "DOM.Iterable", "ES2022"],
+        "types": [${types}],
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "strict": true,
+        "forceConsistentCasingInFileNames": true,
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "noEmit": true,
+        "jsx": "react-jsx"
+    },
+    "include": ["src"]
+}
+`;
+  return tpl;
+}
+
 // src/genViteAppTsx.ts
 function body(o) {
   if (o.daisyui) {
@@ -3306,33 +3345,6 @@ function genVitePackageJson(o) {
   return tpl;
 }
 
-// src/genViteTsConfig.ts
-function genViteTsConfig() {
-  const tpl = `
-{
-    "compilerOptions": {
-        "target": "ES2022",
-        "useDefineForClassFields": true,
-        "lib": ["DOM", "DOM.Iterable", "ES2022"],
-        "types": ["vite/client"],
-        "skipLibCheck": true,
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
-        "strict": true,
-        "forceConsistentCasingInFileNames": true,
-        "module": "ESNext",
-        "moduleResolution": "bundler",
-        "resolveJsonModule": true,
-        "isolatedModules": true,
-        "noEmit": true,
-        "jsx": "react-jsx"
-    },
-    "include": ["src"]
-}
-`;
-  return tpl;
-}
-
 // src/presets/fastifyReact.ts
 function fastifyReact(o) {
   return {
@@ -3349,7 +3361,7 @@ function fastifyReact(o) {
     "apps/server/rolldown.config.ts": genRolldownConfig(),
     "apps/server/src/index.ts": genFastifyServerTs(o),
     "apps/web/package.json": genVitePackageJson(o),
-    "apps/web/tsconfig.json": genViteTsConfig(),
+    "apps/web/tsconfig.json": genSpaTsConfig(o),
     "apps/web/vite.config.ts": genViteConfig(o),
     "apps/web/index.html": genViteIndexHtml(o),
     "apps/web/src/main.tsx": genMainTsx(o),
@@ -4250,6 +4262,98 @@ function pwa(o) {
   };
 }
 
+// src/genRsbuildConfig.ts
+function genRsbuildConfig(o) {
+  const tpl = `
+import { defineConfig } from "@rsbuild/core";
+import { pluginReact } from "@rsbuild/plugin-react";
+import { pluginTailwindcss } from "@rsbuild/plugin-tailwindcss";
+
+export default defineConfig({
+    plugins: [pluginReact(), pluginTailwindcss()],
+    source: {
+        entry: {
+            index: "./src/main.tsx",
+        },
+    },
+    html: {
+        title: "${o.name}",
+    },
+    server: {
+        port: 3000,
+    },
+});
+`;
+  return tpl;
+}
+
+// src/genRsbuildPackageJson.ts
+function genRsbuildPackageJson(o) {
+  const deps = [`"react": "^19.2.0"`, `"react-dom": "^19.2.0"`];
+  if (o.api) {
+    deps.unshift(`"@tanstack/react-query": "^5.90.0"`);
+  }
+  const dev = [
+    `"@rsbuild/core": "^2.0.0"`,
+    `"@rsbuild/plugin-react": "^2.0.0"`,
+    `"@rsbuild/plugin-tailwindcss": "^2.0.0"`,
+    `"@types/react": "^19.2.0"`,
+    `"@types/react-dom": "^19.2.0"`,
+    `"tailwindcss": "^4.3.0"`,
+    `"typescript": "^7.0.0"`
+  ];
+  if (o.daisyui) {
+    dev.push(`"daisyui": "^5.7.0"`);
+  }
+  const tpl = `
+{
+    "name": "${scope(o)}/web",
+    "version": "0.0.1",
+    "description": "Typescript/React SPA on Rsbuild",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "rsbuild dev",
+        "build": "tsc --noEmit && rsbuild build",
+        "preview": "rsbuild preview",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "created by tsreact"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        ${deps.join(",\n        ")}
+    },
+    "devDependencies": {
+        ${dev.join(",\n        ")}
+    }
+}
+`;
+  return tpl;
+}
+
+// src/presets/rsbuildSpa.ts
+function rsbuildSpa(o) {
+  return {
+    ...apiFiles(o),
+    ...huskyFiles(o),
+    "package.json": genRootPackageJson(o),
+    "pnpm-workspace.yaml": genPnpmWorkspaceYaml(o),
+    ".gitignore": genGitIgnore(o),
+    ".editorconfig": genEditorConfig(),
+    ".oxlintrc.json": genOxlintrc(o),
+    ".oxfmtrc.json": genOxfmtrc(o),
+    "apps/web/package.json": genRsbuildPackageJson(o),
+    "apps/web/tsconfig.json": genSpaTsConfig(o),
+    "apps/web/rsbuild.config.ts": genRsbuildConfig(o),
+    "apps/web/src/main.tsx": genMainTsx(o),
+    "apps/web/src/App.tsx": genViteAppTsx(o),
+    "apps/web/src/index.css": genStylesCss(o)
+  };
+}
+
 // src/presets/viteSpa.ts
 function viteSpa(o) {
   return {
@@ -4262,7 +4366,7 @@ function viteSpa(o) {
     ".oxlintrc.json": genOxlintrc(o),
     ".oxfmtrc.json": genOxfmtrc(o),
     "apps/web/package.json": genVitePackageJson(o),
-    "apps/web/tsconfig.json": genViteTsConfig(),
+    "apps/web/tsconfig.json": genSpaTsConfig(o),
     "apps/web/vite.config.ts": genViteConfig(o),
     "apps/web/index.html": genViteIndexHtml(o),
     "apps/web/src/main.tsx": genMainTsx(o),
@@ -4279,6 +4383,7 @@ var PRESETS = {
   pwa,
   expo,
   "vite-spa": viteSpa,
+  "rsbuild-spa": rsbuildSpa,
   "next-drizzle": nextDrizzle,
   "fastify-react": fastifyReact
 };

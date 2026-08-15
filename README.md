@@ -7,11 +7,11 @@ entire build is a single `esbuild` command you can read in one line. No config
 file, no plugin system, no abstraction to learn before you can change how your
 code is compiled.
 
-The **oxc lane** — `vite-spa`, `next-drizzle`, `fastify-react` — is for when
-you want the ecosystem rather than the minimalism: Vite 8 (rolldown under it),
-Next 16 and Tailwind 4 on by default. This is not an attempt to out-do
-`create-vite`; it is Vite as one target among several, so that one command
-scaffolds whichever of these you need next.
+The **oxc lane** — `vite-spa`, `rsbuild-spa`, `next-drizzle`, `fastify-react` —
+is for when you want the ecosystem rather than the minimalism: Vite 8 (rolldown
+under it), Rsbuild 2 (Rspack), Next 16 and Tailwind 4 on by default. This is not
+an attempt to out-do `create-vite`; it is Vite as one target among several, so
+that one command scaffolds whichever of these you need next.
 
 Both lanes generate TypeScript 7 and React 19, both compose with `--api`, and
 **every** template — `expo` included — lints and formats with `oxlint` and
@@ -56,6 +56,7 @@ tells you to run `npm install` and `npm run dev` instead.
 | `pwa`             | Installable offline app: web manifest + service worker          |
 | `expo`            | React Native app on Expo SDK 57 (bundled by metro, not esbuild) |
 | `vite-spa`        | React SPA on Vite 8, Tailwind 4, oxlint + oxfmt                 |
+| `rsbuild-spa`     | React SPA on Rsbuild 2 (Rspack), Tailwind 4, Fast Refresh       |
 | `next-drizzle`    | Next 16 on Turbopack + Drizzle ORM on SQLite/libsql             |
 | `fastify-react`   | Workspaces monorepo: Fastify API (rolldown) + React on Vite     |
 
@@ -285,6 +286,43 @@ Differences from the `react` template beyond the bundler:
 - Linting and formatting are `oxlint` and `oxfmt` — as they are in every
   template now, not just this lane.
 
+### The rsbuild-spa template
+
+The same single-page app as `vite-spa`, bundled by Rspack instead of Rolldown.
+
+```sh
+pnpm create tsreact myapp --template rsbuild-spa
+cd myapp && pnpm install && pnpm dev
+```
+
+Reach for this one over `vite-spa` if you want the webpack-compatible ecosystem
+— an existing webpack config to migrate, or module federation. It is
+[Rsbuild](https://rsbuild.rs/) rather than raw Rspack because Rsbuild is what
+the Rspack team recommends for applications: the dev server, HTML generation
+and production defaults come configured.
+
+React Fast Refresh is on by default here, which is what separates this from the
+`react` template — that one reloads the whole page over esbuild's SSE endpoint,
+this one swaps the component and keeps your state.
+
+Differences from `vite-spa`:
+
+- **There is no `index.html`.** Rsbuild generates the document from its own
+  built-in template, which already carries the `<div id="root">` that
+  `main.tsx` mounts into. The app name reaches the page through
+  `html: { title }` in `rsbuild.config.ts`.
+- **There is no `src/vite-env.d.ts`.** Rsbuild's CSS-module, asset and
+  `import.meta` types arrive through `"types": ["@rsbuild/core/types"]` in
+  `tsconfig.json` rather than a `///` reference.
+- **`source.entry` is set explicitly** to `./src/main.tsx`. Rsbuild's own
+  default is `./src/index.tsx`; naming `main.tsx` keeps the tree identical to
+  `vite-spa`'s.
+- Tailwind is compiled by `@rsbuild/plugin-tailwindcss`, which does not go
+  through PostCSS at all — so there is no `postcss.config.*` here either.
+
+`pnpm build` runs `tsc --noEmit` first, for the same reason `vite-spa` does:
+Rsbuild transforms with SWC and never type-checks.
+
 ### The next-drizzle template
 
 Next.js 16 with a real database layer.
@@ -471,9 +509,9 @@ https://github.com/ngmaibulat/create-tsreact/issues
 
 ### Building
 
-This section is about the esbuild lane. The `vite-spa`, `next-drizzle` and
-`fastify-react` templates build with Vite, Turbopack and rolldown respectively —
-see their sections above.
+This section is about the esbuild lane. The `vite-spa`, `rsbuild-spa`,
+`next-drizzle` and `fastify-react` templates build with Vite, Rspack, Turbopack
+and rolldown respectively — see their sections above.
 
 Building is done via `esbuild`. Here is the command behind `pnpm build` in a
 generated react app — it lives in `apps/web/package.json`, and the root `build`

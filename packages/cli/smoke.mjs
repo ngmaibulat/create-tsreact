@@ -305,6 +305,30 @@ try {
             outputs: ["index.html"],
         },
         {
+            // the one template with no html file of its own: rsbuild generates
+            // the document from its built-in template, so dist/index.html is
+            // produced from nothing but html.title in rsbuild.config.ts. There
+            // is no *-env.d.ts either - rsbuild's css and import.meta types
+            // come from the "types" array in tsconfig.json instead.
+            name: "rsbuild-spa",
+            args: ["--template", "rsbuild-spa"],
+            files: [
+                "package.json",
+                "pnpm-workspace.yaml",
+                ".oxlintrc.json",
+                ".oxfmtrc.json",
+                "apps/web/package.json",
+                "apps/web/tsconfig.json",
+                "apps/web/rsbuild.config.ts",
+                "apps/web/src/main.tsx",
+                "apps/web/src/App.tsx",
+                "apps/web/src/index.css",
+            ],
+            jsonFiles: ["apps/web/package.json"],
+            outDir: "apps/web/dist",
+            outputs: ["index.html"],
+        },
+        {
             // no "next build": Turbopack's first build downloads native
             // binaries and would dominate the suite, while the risk worth
             // catching here - TypeScript 7 against Next 16's own types - is
@@ -661,6 +685,36 @@ try {
             check("ships production react", !js.includes("react-dom.development"));
             check("tailwind output reaches the bundle", css.includes("--tw-"));
             check("a utility used in App.tsx is compiled in", /\.max-w-lg\b/.test(css));
+        }
+
+        // Same three risks as vite-spa, one directory layout further down
+        // (rsbuild hashes into dist/static/{js,css}), plus one this template
+        // has to itself: dist/index.html is generated rather than copied from
+        // a source file, so the only thing carrying the app name into it is
+        // html.title - and the only thing the mount point can agree with is
+        // rsbuild's built-in template, which main.tsx expects to say "root".
+        if (t.name === "rsbuild-spa") {
+            const read = (kind, ext) => {
+                const dir = path.join(app, "apps/web/dist/static", kind);
+                return fs
+                    .readdirSync(dir)
+                    .filter((f) => f.endsWith(ext))
+                    .map((f) => fs.readFileSync(path.join(dir, f), "utf8"))
+                    .join("");
+            };
+
+            const js = read("js", ".js");
+            const css = read("css", ".css");
+            const html = fs.readFileSync(path.join(app, "apps/web/dist/index.html"), "utf8");
+
+            check("ships production react", !js.includes("react-dom.development"));
+            check("tailwind output reaches the bundle", css.includes("--tw-"));
+            check("a utility used in App.tsx is compiled in", /\.max-w-lg\b/.test(css));
+            check(
+                "the generated html carries the app name",
+                html.includes(`<title>${t.name}</title>`),
+            );
+            check("the generated html mounts where main.tsx looks", /id="root"/.test(html));
         }
 
         // the server half is bundled by rolldown with its runtime deps left

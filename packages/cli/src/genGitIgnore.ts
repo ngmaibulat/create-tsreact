@@ -26,6 +26,7 @@ const OUTPUT: Record<Template, string[]> = {
     ],
     expo: [],
     "vite-spa": ["apps/web/dist"],
+    "rsbuild-spa": ["apps/web/dist"],
     "next-drizzle": [
         "apps/web/.next",
         "apps/web/out",
@@ -47,6 +48,7 @@ const TAILWIND_OUTPUT: Record<Template, string | null> = {
     extension: "apps/extension/src/popup.css",
     expo: null,
     "vite-spa": null,
+    "rsbuild-spa": null,
     "next-drizzle": null,
     "fastify-react": null,
 };

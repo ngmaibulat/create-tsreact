@@ -12,12 +12,12 @@ import genPnpmWorkspaceYaml from "../genPnpmWorkspaceYaml.js";
 import genRolldownConfig from "../genRolldownConfig.js";
 import genRootPkgJson from "../genRootPackageJson.js";
 import genServerTsConfig from "../genServerTsConfig.js";
+import genSpaTsConfig from "../genSpaTsConfig.js";
 import genStylesCss from "../genStylesCss.js";
 import genViteAppTsx from "../genViteAppTsx.js";
 import genViteConfig from "../genViteConfig.js";
 import genViteIndexHtml from "../genViteIndexHtml.js";
 import genVitePkgJson from "../genVitePackageJson.js";
-import genViteTsConfig from "../genViteTsConfig.js";
 import huskyFiles from "../huskyFiles.js";
 
 //The only template with two apps. Since every template is a workspace now,
@@ -44,7 +44,7 @@ export default function fastifyReact(o: Opts): Files {
         "apps/server/src/index.ts": genFastifyServerTs(o),
 
         "apps/web/package.json": genVitePkgJson(o),
-        "apps/web/tsconfig.json": genViteTsConfig(),
+        "apps/web/tsconfig.json": genSpaTsConfig(o),
         "apps/web/vite.config.ts": genViteConfig(o),
         "apps/web/index.html": genViteIndexHtml(o),
         "apps/web/src/main.tsx": genMainTsx(o),
